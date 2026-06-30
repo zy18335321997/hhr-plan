@@ -1,0 +1,30 @@
+# Implementation notes (internal development logs)
+implementation-notes/
+implementation-notes-*.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+._*

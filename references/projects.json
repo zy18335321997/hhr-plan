@@ -1,0 +1,54 @@
+{
+  "_description": "多项目注册表。权威数据源: ~/Documents/workflow-output/projects_registry.json（auto_sync 自动维护）.",
+  "canonical": "~/Documents/workflow-output/projects_registry.json",
+  "projects": {
+    "几建": {
+      "worksheets": 136,
+      "workflows": 321,
+      "domains": 12,
+      "last_extracted": "2026-06-16",
+      "context_ready": true
+    },
+    "尚策": {
+      "worksheets": 136,
+      "workflows": 490,
+      "domains": 12,
+      "last_extracted": "2026-06-17",
+      "context_ready": true
+    },
+    "经济开发区城市运营中心": {
+      "worksheets": 39,
+      "workflows": 264,
+      "last_extracted": "2026-06-12",
+      "context_ready": true
+    },
+    "赫立-研发管理": {
+      "worksheets": 9,
+      "workflows": 21,
+      "last_extracted": "2026-06-16",
+      "context_ready": true
+    },
+    "赫立-人事薪资": {
+      "worksheets": 14,
+      "workflows": 25,
+      "last_extracted": "2026-06-16",
+      "context_ready": true
+    },
+    "赫立-合同管理": {
+      "worksheets": 21,
+      "workflows": 34,
+      "last_extracted": "2026-06-16",
+      "context_ready": true
+    }
+  },
+  "cross_index": {
+    "naming_conventions": {
+      "几建": {
+        "auto_number_prefix": "拼音缩写(2-4字母) + YYYYMMDD + 3位流水号",
+        "parent_child_naming": "子表名（父表名/操作类型）",
+        "workflow_naming": "动词+名词（条件）"
+      }
+    }
+  },
+  "active_project": null
+}

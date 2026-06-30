@@ -1,0 +1,21 @@
+interface:
+  display_name: "自然语言校验"
+  short_description: "检查输出文档中的术语是否使用客户语言而非系统内部术语。确保客户能看懂方案文档。"
+  mode: "utility"
+  category: "quality"
+  triggers:
+    - "检查语言"
+    - "去术语"
+    - "客户能看懂吗"
+    - "翻译成客户语言"
+    - "plain language"
+  requires:
+    - 项目 aliases.json
+  tools: []
+  produces:
+    - 术语替换清单（系统术语→客户语言）
+    - 未被 aliases.json 覆盖的术语（需确认）
+  verification: {}
+  pipeline: "2 steps: 扫描系统术语→对照 aliases.json 替换"
+  references:
+    - built-in-skills/plain-language-check.md
