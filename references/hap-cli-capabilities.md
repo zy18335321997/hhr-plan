@@ -52,9 +52,25 @@ hap workflow node add PID --type 27 --name "通知" --after PREV_NODE_ID
 hap workflow node add PID --type 12 --name "延时" --after PREV_NODE_ID
 ```
 
-### 节点配置 (node save)
+### 节点配置 (node save) — 已验证可用 ✅
 
-node save 需要发送 node get 返回的**完整 JSON**, 不能只发送 subset。
+**关键发现**: `saveNode` API 需要 **FLAT JSON 格式** (所有字段平铺, 不包裹在 `flowNode` 里), 且必须包含**完整蓝本** (controls/appList/selectNodeObj/formulaMap/flowNodeList 等支持数组)。
+
+**调用方式**: 必须绕过 CLI, 直接调内部 API:
+```python
+import urllib.request, json
+hdrs = auth.get_auth_headers()
+hdrs["Content-Type"] = "application/json"
+config = {**full_node_blueprint, "processId": pid, "nodeId": nid, "name": "新名称", ...}
+body = json.dumps(config).encode()
+req = urllib.request.Request(f"{BASE}/api/workflow/flowNode/saveNode", data=body, headers=hdrs, method="POST")
+```
+
+**完整流程**:
+1. `batch-add` 创建节点壳 (获得 nodeId)
+2. 从已有生产工作流 `node get` 获取同类型节点的完整 JSON 作蓝本
+3. 修改蓝本中的 `name`/`appId`/`fields`/`controls` 等
+4. 直接调 `saveNode` (flat format + 完整蓝本) 写入配置
 
 **typeId=6 add_record 完整格式**:
 ```json
@@ -142,11 +158,27 @@ node save 需要发送 node get 返回的**完整 JSON**, 不能只发送 subset
 }
 ```
 
-### 不可用的类型
+### 不可用 (CLI) / 可通过直接 API 补救
 
-| nodeType | 现象 | 原因 |
-|----------|------|------|
-| get_single | batch-add 500 | 服务端不支持此类型通过 batch-add 创建 |
-| get_relation | batch-add 500 | 同上 |
+| nodeType | CLI batch-add | 直接 saveNode API | 说明 |
+|----------|:--:|:--:|------|
+| get_single | 500 | **待验证** | 用 get_multiple 壳 + saveNode 改 actionId=406 |
+| get_relation | 500 | **待验证** | 同上, 改 actionId=20 |
+| node add --after (数据节点) | 500 | N/A | 数据节点(6/7)用 batch-add 创建壳, 再 saveNode 配置 |
 
-> 解决方案: 先用 batch-add 创建 get_multiple 节点, 然后用 node save 发完整 JSON 配置为 get_single 模式。
+### 已验证完整的 saveNode API 调用格式
+
+```python
+# WORKING: flat format with complete blueprint
+config = copy.deepcopy(blueprint_from_real_node)
+config["processId"] = pid
+config["nodeId"] = node_id
+config["name"] = "新名称"
+config["appId"] = "target_ws_id"
+config["appName"] = "target_ws_name"
+config["fields"] = [{...}]  # from blueprint, with modified values
+# MUST keep: controls, appList, selectNodeObj, formulaMap, flowNodeList
+
+# FAILING: CLI wrapper or missing supporting arrays
+# hap workflow node save ... --config '{...}'  → always 500
+# sending fields without controls/appList → fields silently dropped
