@@ -314,9 +314,24 @@ T0→T1→...→Tn，每个节点标注写入字段。验证：Tn 只读 T0..T{n
 
 ---
 
-## Step 7: 门控 — Agent 并行校验
+## Step 7: 门控 — 脚本预检 + Agent 并行校验
 
 🚧 **GATE**：Step 1-6 完成，`execution_lock.json` 已生成。
+
+### 7.0 脚本预检（自动，先跑）
+
+先跑确定性验证。不通过 → 修正 → 重跑。通过 → 继续：
+
+```bash
+# 平台机械校验（typeId/actionId/批量上限/拓扑）
+python3 ${SKILL_DIR}/scripts/verify-platform.py --lock-file execution_lock.json
+
+# 设计合约验证（字段存在性/关联方向/DAG环路）
+python3 ${SKILL_DIR}/scripts/design_validator.py <项目名> --lock-file execution_lock.json
+python3 ${SKILL_DIR}/scripts/design_validator.py <项目名> --check-graph
+```
+
+### 7.1 Agent 并行校验
 
 加载编排协议：
 ```

@@ -55,6 +55,8 @@ Agent(
 
   输入文件:
   - 设计方案摘要: /tmp/hhr_agent_brief.json
+  - 明道云节点完整指南: ${WORKFLOW_NODES_GUIDE_PATH:-~/.claude/skills/workflow-analyzer/references/pd-openweb-schemas/workflow-nodes-complete-guide.md}
+  - 平台能力边界: ${SKILL_DIR:-~/.claude/skills/hhr-plan}/references/platform/node-capabilities.md
 
   读取这些文件后，严格按照 platform-verify.md 中的校验清单逐条检查。
   输出必须是 JSON 格式（见 platform-verify.md §输出格式）。
@@ -75,6 +77,19 @@ Agent(
 | fail | pass | 不通过 | 生成修复计划（仅 Agent 1 的问题） |
 | pass | fail | 不通过 | 生成修复计划（仅 Agent 2 的问题） |
 | fail | fail | 不通过 | 生成合并修复计划（两个 Agent 的问题） |
+
+**修复回退映射**（按问题类型定位到设计步骤）：
+
+| 失败类型 | Agent | 回到步骤 |
+|---------|-------|---------|
+| 公理违规 (axiom_compliance fail) | Agent 1 | Mode A: Step 1 五问推导 / Mode B: Step 2 增量构建 |
+| 时序错误 (timeline fail) | Agent 1 | Mode A: Step 3 工作流 / Mode B: Step 2.7 节点链路 |
+| 命名/字段问题 (naming/fields fail) | Agent 1 | Mode A: Step 4 字段配置 / Mode B: Step 2 增量构建 |
+| 逻辑问题 (logic fail) | Agent 1 | Mode A: Step 3 工作流 / Mode B: Step 2 增量构建 |
+| 过度设计 (signals fail) | Agent 1 | Mode A: Step 3 工作流（删节点）/ Mode B: Step 2 |
+| typeId/actionId 错误 | Agent 2 | Mode A: Step 3 工作流 / Mode B: Step 2 |
+| 批量上限/拓扑问题 | Agent 2 | Mode A: Step 3 工作流（重构节点链）/ Mode B: Step 2 |
+| 平台陷阱 | Agent 2 | Mode A: Step 0 平台边界 / Mode B: Step 0 上下文 |
 
 **修复行动计划生成**（新增）：
 
@@ -102,9 +117,10 @@ Agent(
 ```
 
 **Hard Stop 条件**：
-- 同一问题修正 2 次后 Agent 仍 fail → 标注 LOW 置信度，将争议点报告用户
+- 同一问题修正 2 次后 Agent 仍 fail → **输出 LOW 置信度方案**，在输出顶部醒目标注"以下决策置信度为 LOW，建议人工审核"，列出争议点。**不中止**，让用户决定接受 LOW 置信度还是放弃方案
 - Agent 返回 uncertain 项 → 主 Agent 逐项判断是否需要打断用户
 - `fix_plan.hard` 非空 → 打印醒目的"以下问题需要重新设计"提示，但不阻断输出
+- **修正上限**: 同一轮最多修正 3 次。3 次后仍 fail → 强制输出 LOW 置信度方案 + 所有争议点
 
 ### Step 4: 写入门控结果
 

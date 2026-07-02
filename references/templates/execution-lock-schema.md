@@ -16,6 +16,7 @@
 ```json
 {
   "meta": {
+    "schema_version": "1.0",
     "project": "string",
     "mode": "A|B",
     "created": "YYYY-MM-DD",
