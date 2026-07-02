@@ -373,6 +373,18 @@ python3 ${SKILL_DIR}/scripts/agent_prepare.py execution_lock.json --output /tmp/
 }
 ```
 
+### 7.3 平台原生校验（Gate 4 — 地面真相）
+
+Agent 校验通过后，调用平台自身的 validate API：
+
+```bash
+python3 ${SKILL_DIR}/scripts/platform-validate.py --lock-file execution_lock.json
+```
+
+- 平台 pass → 最终输出，置信度 HIGH
+- 平台 fail → 平台说 fail 才是真的 fail。输出平台原生错误
+- 无认证 → 跳过，标注"未经平台校验"
+
 ### ✅ Checkpoint
 
 ```markdown

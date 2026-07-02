@@ -140,6 +140,26 @@ Agent(
 
 ---
 
+## Gate 4: 平台原生校验（地面真相）
+
+Gate 1-3 通过后，调用平台自身的 validate API：
+
+```bash
+python3 ${SKILL_DIR}/scripts/platform-validate.py --lock-file execution_lock.json
+```
+
+**判定规则**：
+
+| 平台结果 | 行为 |
+|---------|------|
+| pass | 平台确认通过 → 最终输出，置信度 HIGH |
+| fail | 平台拒绝 → 平台说 fail 才是真的 fail。输出平台原生错误 + 修正建议 |
+| skipped | 无平台认证 (Chrome 未登录 / 无 AppKey) → 不阻断，标注"未经平台校验" |
+
+**为什么这是地面真相**: 我们的 Agent 1/2 对照的是文档，平台 validate 对照的是运行时。平台知道节点间引用是否有效、数据链路是否合法、是否有我们不知道的平台约束。平台说 pass >> 我们的 Agent 说 pass。
+
+---
+
 ## Mode D 专用: Agent 3 (audit-scanner)
 
 Audit-scanner 的调用在 Mode D Step 3 门控验证中：
