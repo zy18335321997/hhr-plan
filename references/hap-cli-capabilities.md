@@ -44,13 +44,24 @@ hap app select APP_ID          # 设置默认应用
 | rollup | 汇总 | 9 |
 | sub_process | 子流程 | 16 |
 
-### 节点顺序链接
+### 节点顺序链接 — 所有类型可用 ✅
+
+`node add --after` 对**所有节点类型**均可用，包括带 `--app-id` + `--action-id` 的数据节点。
 
 ```bash
-# 方式: node add --after (简单类型稳定)
+# 简单类型
 hap workflow node add PID --type 27 --name "通知" --after PREV_NODE_ID
 hap workflow node add PID --type 12 --name "延时" --after PREV_NODE_ID
+hap workflow node add PID --type 9  --name "计算" --after PREV_NODE_ID --action-id 100
+
+# 数据节点 (带 --app-id + --action-id)
+hap workflow node add PID --type 6 --name "新增" --after PREV_NODE_ID --action-id 1 --app-id WS_ID
+hap workflow node add PID --type 6 --name "更新" --after PREV_NODE_ID --action-id 2 --app-id WS_ID
 ```
+
+**已验证的链**: `Trigger → notice(typeId=27) → update_record(typeId=6, appId+actionId) → add_record(typeId=6, appId+actionId)`
+
+> CLI 输出偶尔为多行("Node added: {...}")导致 JSON 解析失败, 但节点实际已创建成功。
 
 ### 节点配置 (node save) — 已验证可用 ✅
 
@@ -160,11 +171,10 @@ req = urllib.request.Request(f"{BASE}/api/workflow/flowNode/saveNode", data=body
 
 ### 不可用 (CLI) / 可通过直接 API 补救
 
-| nodeType | CLI batch-add | 直接 saveNode API | 说明 |
-|----------|:--:|:--:|------|
-| get_single | 500 | **待验证** | 用 get_multiple 壳 + saveNode 改 actionId=406 |
-| get_relation | 500 | **待验证** | 同上, 改 actionId=20 |
-| node add --after (数据节点) | 500 | N/A | 数据节点(6/7)用 batch-add 创建壳, 再 saveNode 配置 |
+| nodeType | CLI batch-add | CLI node add --after | 直接 saveNode API | 说明 |
+|----------|:--:|:--:|:--:|------|
+| get_single | 500 | 未测 | **待验证** | 用 get_multiple 壳 + saveNode 改 actionId=406 |
+| get_relation | 500 | 未测 | **待验证** | 同上, 改 actionId=20 |
 
 ### 已验证完整的 saveNode API 调用格式
 
