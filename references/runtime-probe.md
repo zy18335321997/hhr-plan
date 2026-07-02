@@ -25,8 +25,16 @@ hhr-plan 通过 hap-bridge 的 MCP stdio 服务器（已注册在 `~/.claude/mcp
 | 需要 | manifest 字段 | hap-bridge MCP 工具 |
 |------|-------------|-------------------|
 | 所有工作表列表 | `tables` keys | `get_app_worksheets_list` — `responseFormat: "md"` |
-| 工作表字段结构 | `project_context.json` > worksheets | `get_worksheet_structure` — `worksheet_id` |
+| 工作表字段结构 (名称+类型) | `project_context.json` > worksheets | `get_worksheet_structure` — `worksheet_id`, `responseFormat: "md"` |
+| 工作表字段结构 (完整, 含 Rollup/Lookup/Formula) | `project_context.json` > worksheets | `get_worksheet_structure` — `worksheet_id`, **`responseFormat: "json"`** |
 | 工作表记录数 | — | `get_record_list` — `worksheet_id`, `limit: 1` (看 total) |
+
+> **JSON vs MD 格式**: MD 格式只返回字段名+类型。**JSON 格式额外返回**:
+> - Rollup: `dataSource`=`$关联字段ID$` (来源表), `sourceField` (聚合字段), `subType` (聚合方式: 5=SUM, 6=COUNT)
+> - Lookup: `dataSource` (穿透的关联字段), `sourceField` (目标字段), `options` (全部下拉选项)
+> - Formula: `dataSource`=`$fieldA$/$fieldB$` (可读表达式)
+> - Relation: `relation.bidirectional`, `relation.showFields`, `relation.level`
+> - 所有字段的完整 `options` (下拉/单选选项列表)
 
 ### 工作流查询
 
@@ -36,6 +44,40 @@ hhr-plan 通过 hap-bridge 的 MCP stdio 服务器（已注册在 `~/.claude/mcp
 | 工作流节点链路 | `node_configs.json` | `cli.py wf-nodes <process_id>` |
 | 工作流完整配置 | `dependency_graph.json` | `cli.py wf-config <process_id>` |
 | 工作流读写清单 | `tables[].r / .w` | `cli.py wf-config <pid>` → 解析 nodes 中的 query/crud 节点 |
+
+### 工作流节点字段名补齐
+
+`wf-nodes --raw` 返回的节点字段中 **`fieldName` 为 null**。用以下方法补齐：
+
+**方法 A: 实时交叉查表** (推荐，始终最新)
+```bash
+# 1. 取工作流节点的目标工作表 ID
+APP_ID=$(python3 ~/.claude/mcp-servers/hap-bridge/cli.py wf-nodes --raw "<PID>" | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+fmap=d.get('data',{}).get('flowNodeMap',{})
+for n in fmap.values():
+    if n.get('typeId')==6:
+        print(n.get('appId')); break
+")
+
+# 2. 获取工作表完整字段定义 (JSON)
+python3 ~/.claude/mcp-servers/hap-bridge/cli.py call get_worksheet_structure \
+  "{\"worksheet_id\":\"$APP_ID\",\"ai_description\":\"解析节点字段名\",\"responseFormat\":\"json\"}" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin)
+    fields={f['id']:f['name'] for f in d['data']['fields']}
+    print(json.dumps(fields, ensure_ascii=False))" > /tmp/field_names.json
+
+# 3. 交叉查表: fieldId → fieldName
+```
+
+**方法 B: _field_map.json** (Browser 提取时生成)
+```bash
+# inject_all.js 产出 _field_map.json, 包含 fieldId→fieldName 映射
+python3 -c "
+import json
+fm=json.load(open('_field_map.json'))['fieldMap']
+print(fm.get('69c9d421990d62e469f27793'))  # → 发布者
+"
 
 ### 记录查询
 

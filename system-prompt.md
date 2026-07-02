@@ -45,15 +45,44 @@ python3 $SKILL_DIR/scripts/rebuild_graph.py 几建 --lifecycle 表名
 
 ### 工具能力边界
 
-| 能查到 | 用什么 | 查不到 |
+| 能查到 | 用什么 | 新能力 |
 |--------|--------|--------|
 | 工作流列表+节点配置 | `hap-bridge wf-nodes --raw <PID>` | — |
 | 工作表字段名+类型 | `hap-bridge call get_worksheet_structure` | — |
 | 实体生命周期(谁读写) | `rebuild_graph.py --lifecycle` | — |
-| — | — | Rollup 聚合来源配置 |
-| — | — | Lookup 关联路径 |
-| — | — | Formula 公式内容 |
-| — | — | 表单自定义按钮配置 |
+| Rollup 聚合来源 (来源表/来源字段/过滤条件/聚合方式) | `get_worksheet_structure` **JSON 格式** | `dataSource`=`$关联字段ID$`, `sourceField`=聚合字段, `subType`=聚合方式(5=SUM,6=COUNT) |
+| Lookup 关联路径 (从哪个关联字段穿透/取什么字段) | `get_worksheet_structure` **JSON 格式** | `dataSource`=穿透的关联字段, `sourceField`=目标字段, `options`=下拉选项 |
+| Formula 计算逻辑 (可读表达式) | `get_worksheet_structure` **JSON 格式** | `dataSource`=`$fieldA$/$fieldB$` 语法 |
+| 关联关系全貌 (方向/层级/显示字段) | `get_worksheet_structure` **JSON 格式** | `relation.bidirectional`, `relation.showFields`, `relation.level` |
+| 工作流节点字段名 (fieldName 盲点) | **交叉查表**: `wf-nodes --raw` → fieldId → `get_worksheet_structure` (JSON) → fieldName | `_field_map.json` (Browser 提取) 或实时 JSON 调用 |
+| 表单自定义按钮 | **Open API**: `GET /v3/app/worksheets/{id}/custom-actions` | 新增 |
+
+> **关键变更**: `get_worksheet_structure` 必须用 `"responseFormat":"json"` 才能拿到 Rollup/Lookup/Formula 的完整三层配置。MD 格式只返回字段名+类型，丢失了 `dataSource` / `sourceField` / `relation` 等关键字段。
+>
+> **交叉查表**: `wf-nodes --raw` 返回的节点字段 `fieldName` 为 null，但 `fieldId` 完整。用目标工作表的 `get_worksheet_structure` (JSON) 建立 fieldId→name 映射，一口补齐。
+
+### Open API 新增能力
+
+明道云开放 API (`https://apifox.mingdao.com`, 鉴权: AppKey+Sign):
+
+| 层次 | 能力 | API 端点 |
+|------|------|---------|
+| 读 | 工作表结构 (含 Rollup/Lookup/Formula) | `GET /v3/app/worksheets/{id}` |
+| 读 | 工作流详情 | `GET /v3/app/workflows/{id}` |
+| 读 | 触发流程列表 | `GET /v3/app/workflow/processes` |
+| 读 | 审批执行详情 | `GET /v3/app/workflow/.../approval/{id}` |
+| 读 | 行记录 CRUD | `GET/POST/PUT/DELETE .../rows` |
+| 读 | 成员/部门查询 | `GET /v3/users/lookup`, `/v3/departments/lookup` |
+| **写** | **批量添加工作流节点** | `POST /v3/app/workflows/{id}/nodes/batch` |
+| **写** | **删除工作流节点** | `DELETE /v3/app/workflows/{id}/nodes/{id}` |
+| **写** | **验证工作流** | `POST /v3/app/workflows/{id}/validate` |
+| **写** | **发布工作流** | `POST /v3/app/workflows/{id}/publish` |
+| **写** | **创建工作流** | `POST /v3/app/workflows` |
+| 写 | 批量增/改/删记录 | `POST/PUT/DELETE ...rows/batch` |
+| 写 | 批量创建视图 | `POST /v3/app/worksheets/{id}/views/batch` |
+| 写 | 统计图 | `POST /v3/app/worksheets/{id}/charts` |
+
+> 详见 `references/open-api-capabilities.md`。当前 hhr-plan 通过 hap-bridge MCP 代理调用读操作（数据层），通过 hap-bridge CLI 调用工作流读操作（Chrome 认证）。Open API 补齐了**工作流写操作**和**独立 REST 认证**两条链路。
 
 ---
 
