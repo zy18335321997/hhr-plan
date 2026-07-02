@@ -94,7 +94,24 @@ fi
 
 # ── 所有模式: Agent 文件完整性 ──
 echo ""
-echo "[5] Agent 文件完整性"
+echo "[5] 文件布局检查"
+
+# scripts/ 下必须有 --help
+echo "  Scripts --help check:"
+SCRIPT_NO_HELP=0
+for f in "$SKILL_DIR"/scripts/*.py; do
+    fname=$(basename "$f")
+    if ! grep -q "add_argument\|--help\|Usage:" "$f" 2>/dev/null; then
+        warn "  $fname: 缺少 --help / argparse 定义"
+        SCRIPT_NO_HELP=$((SCRIPT_NO_HELP + 1))
+    fi
+done
+if [[ $SCRIPT_NO_HELP -eq 0 ]]; then
+    ok "所有 Python 脚本有 --help 定义"
+fi
+
+# agents/ 下必须有输出格式
+echo "  Agent output-format check:"
 AGENT_FILES=(
     "agents/logic-verify.md"
     "agents/platform-verify.md"
