@@ -21,9 +21,19 @@
 4. **漏检检查**: 逐条对照公理 MUST/MUST NOT 约束表，是否有未检查的约束项？
 5. **假阴性检查**: 是否有明显违反公理的配置但报告未指出的？
 
-## 输出
+## 输出格式
 
-返回 `verdict: pass | fail`，如果是 fail，列出漏检的维度或未覆盖的约束项。
+```json
+{
+  "verdict": "pass" | "fail",
+  "missed_dimensions": ["维度1", "维度2"],
+  "uncovered_constraints": ["约束1.1", "约束3.2"],
+  "false_negatives": ["描述"]
+}
+```
+
+- `verdict = pass`: 5 条公理全部覆盖，无漏检项
+- `verdict = fail`: 存在漏检维度或未覆盖的约束项
 
 ## 规则
 
