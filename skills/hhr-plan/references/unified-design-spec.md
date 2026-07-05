@@ -96,6 +96,52 @@
 
 ---
 
+## 设计质量约束
+
+> 来源: hap-app-builder 设计规范（平台实战验证）。Mode A/B 设计输出前必须逐项检查。
+
+### 字段数量下限
+
+| 表类型 | 最少字段 | 示例 |
+|--------|:--:|------|
+| 主数据表 (客户/图书/商品/设备) | >= 15 | 编号+名称+分类+规格+状态+创建人+... |
+| 业务单据表 (订单/借阅记录/工单) | >= 12 | 编号+关联+数量+日期+状态+负责人+... |
+| 流程事务表 (入库单/巡检记录) | >= 8 | 编号+关联+状态+时间+备注+... |
+
+### 七维字段覆盖
+
+每张表必须覆盖 7 个维度（每维 >= 1 字段）。第 2 维（核心业务属性）最常被忽略：
+
+1. **主标识** — 编号/名称/标题
+2. **核心业务属性** — 该实体独有的关键属性
+3. **状态与分类** — 状态/类型/标签
+4. **时间维度** — 创建/开始/结束/截止日期
+5. **责任与协作** — 拥有者/负责人/参与人
+6. **数量与金额** — 数值/金额/计数
+7. **备注与附件** — 说明/备注/附件/图片
+
+### 视图驱动规则
+
+| 字段条件 | 必须创建的视图 |
+|----------|-------------|
+| 自引用或回环关联字段 | 层级图 |
+| 单选 >= 3 个选项 | 看板 |
+| 位置字段 | 地图 |
+| 附件中有核心图片内容 | 画廊 |
+| 计划开始+结束日期 | 甘特图 |
+| 时间段+人员/资源字段 | 资源图 |
+| 单记录配置表 | 详情(mode=first) |
+
+### consistencyNotes
+
+每张表输出时携带 `consistencyNotes`：
+- 哪些字段 options 支持哪些视图 filter
+- 哪些字段被哪些工作流读写
+- 自定义按钮的 enableCondition 依赖了哪些字段
+- 关联字段方向 + 目标表
+
+---
+
 ## 第二层：正确性门控（Correctness）
 
 > 来源: hhr-plan 5 公理 → 6 Gate（增强版：整合 workflow 设计规则）
@@ -231,14 +277,30 @@
 ### BR2: Condition 条件
 
 ```
-□ left.node 始终必填（即使是查询节点自身的 internal filter）
-  - 查询自身 filter: left.node 指向当前查询节点，right.node 指向上游
-  - 分支 filter: left.node 指向分支上游的数据源节点
-□ 操作符只能用这些: eq / ne / gt / gte / lt / lte / in / not_in /
+□ left.node 始终必填，按上下文不同:
+  ┌──────────────────────┬──────────────────────────────────┐
+  │ 上下文               │ left.node 指向                    │
+  ├──────────────────────┼──────────────────────────────────┤
+  │ get_single/multiple  │ 查询节点自身 (如 find_book)       │
+  │ 自身 filter          │ right.node 指向上游提供动态值     │
+  ├──────────────────────┼──────────────────────────────────┤
+  │ branch 条件          │ 上游数据源节点 (如 get_record)     │
+  │                      │ 严禁指向分支自身                   │
+  ├──────────────────────┼──────────────────────────────────┤
+  │ 触发器 filter        │ 触发器节点自身                    │
+  └──────────────────────┴──────────────────────────────────┘
+□ 操作符合法枚举 (19个):
+  eq / ne / gt / gte / lt / lte / in / not_in /
   empty / not_empty / contains / not_contains / starts_with / ends_with /
   all_contains / belongs / not_belongs / checked / unchecked
   禁止: equals / is_empty / ge / le / neq 等变体
-□ config.target 而非 sourceNode — HAP 没有 sourceNode 属性
+□ Date/DateTime 字段用专用 conditionId（非通用数值）:
+  lt→17(早于) / lte→42(早于等于) / gt→18(晚于) / gte→40(晚于等于)
+□ config.target 而非 sourceNode — HAP NodeSpec 没有 sourceNode 属性
+  update_record / cc / approval_block 的数据源统一用 config.target
+□ systemField/nowTime 在 filter 中引用固定系统节点:
+  {controlId: nowTime, nodeId: 5d39140d381d42d20db0c4da,
+   appType: 100, nodeType: 100}
 ```
 
 ### BR3: 作用域隔离
@@ -246,30 +308,38 @@
 ```
 □ 审批块内部:
   - 引用被审批记录 → { nodeAlias: "approval_start" }（固定别名）
-  - 内部 prevNode 不能指向外部节点；外部 prevNode 不能指向内部节点
+  - approve 的 approvers 只能引用 approval_start 作用域内的字段
   - initiators 必填（通常绑定 ownerid）
+  - fill_in assignee 是单个 PersonRef（非数组），formProperties >= 1
 □ 子流程内部:
   - 引用当前记录 → { nodeAlias: "sub_trigger" }（固定别名）
   - 不能跨作用域引用主流程节点
   - 参数通过 sub_process 节点的 params 显式传入
-□ 自定义动作工作流:
-  - 触发节点引用 → 必须用物理 nodeId（从 get_workflow_structure 获取）
-  - 严禁假设别名为 "trigger" — StartNodeControlsIsNull 致命错误
+□ 自定义动作工作流触发器引用:
+  - 必须用物理 nodeId（从 get_workflow_structure 获取）
+  - 严禁假设别名为 "trigger" → StartNodeControlsIsNull 致命错误
+  - 普通工作表工作流: 用 nodeAlias（从 create_process 获取）
 ```
+
 
 ### BR4: 节点引用约束
 
 ```
 □ update_record 节点执行后没有输出字段
   - 后续节点需要字段值 → 追溯引用触发节点或上游查询节点
-  - 严禁引用 update_record 节点的字段: StartNodeControlsIsNull 致命错误
+  - 严禁引用 update_record 节点的字段 → StartNodeControlsIsNull 致命错误
 □ rollup/compute 输出字段是固定常量:
   - rollup → number_fx_id
   - compute(number/dateDiff) → number_fx_id
   - compute(dateOffset) → date_fx_id
   - code → 自定义输出参数名
+□ dateOffset 表达式严格格式:
+  - 必须有符号 + 单位: "+30d", "-1d", "+3d"
+  - 大小写敏感，数字无符号/单位 → INVALID_NODE 致命错误
 □ systemField 在模板中必须用 $system-fieldId$，严禁 $nodeAlias-systemField$
+□ wfstatus 是系统只读字段，不可写入 → 用自定义单选字段代替
 ```
+
 
 ### BR5: 分支路径约束
 
@@ -298,13 +368,17 @@
 ### BR7: 发布顺序
 
 ```
-□ 含 sub_process / approval_block 时:
-  1. batch_create_process_nodes 创建节点
-  2. 从返回值提取内部 processId
-  3. 先 publish_process 每个内部流程
-  4. 最后 publish_process 主流程
+□ 含 sub_process / approval_block (mode: create) 时:
+  1. batch_create/create 创建所有节点
+  2. 从 batch-add 返回值提取 innerProcessId
+  3. 先 publish 每个内部流程（审批块 → 子流程）
+  4. 最后 publish 主流程
   违反 → NodeAppIsNull 致命错误
+□ hap CLI 对应:
+  hap workflow publish <inner_pid>   # 先内
+  hap workflow publish <main_pid>   # 后主
 ```
+
 
 ---
 
