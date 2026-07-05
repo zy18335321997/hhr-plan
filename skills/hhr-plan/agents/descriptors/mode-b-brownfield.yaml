@@ -1,0 +1,43 @@
+interface:
+  display_name: "棕地改造"
+  short_description: "在已有明道云应用上进行修改、扩展或优化。输入是需求+项目上下文，输出是增量变更方案+影响面报告。"
+  mode: "B"
+  category: "design"
+  triggers:
+    - "改这个工作流"
+    - "加个字段"
+    - "加张表"
+    - "修改..."
+    - "扩展..."
+    - "优化..."
+    - "brownfield"
+  requires:
+    - system-prompt.md
+    - references/templates/field-association.md
+    - references/templates/output-template.md
+    - 项目 project_context.json
+    - 项目 dependency_graph.json
+    - 项目 business-flow-manifest.json
+  tools:
+    - scripts/rebuild_graph.py --lifecycle
+    - scripts/search.py
+    - hap-bridge wf-nodes --raw
+    - scripts/agent_prepare.py
+    - scripts/design_validator.py
+  produces:
+    - 影响面报告（哪些表/工作流受影响）
+    - 增量变更方案（新增/修改的表和字段）
+    - 工作流修改方案（节点增删改）
+    - execution_lock.json
+  verification:
+    primary: "Agent 1 (逻辑: 5-section, 含时序校验)"
+    secondary: "Agent 2 (平台: 节点类型+数据链路+拓扑)"
+    gate: "双门控 — 任一 Agent fail 则阻断输出"
+  pipeline: "4 steps: 上下文确认→影响面分析→增量构建→门控输出"
+  blocking_steps:
+    - "Step 0: 上下文不足时停 (Tier 1 + Tier 2)"
+    - "Step 1: 影响面 >10 个工作流时 Hard Stop"
+    - "Step 3: Agent 1 或 Agent 2 不通过时停"
+  references:
+    - built-in-skills/mode-b-brownfield.md
+    - references/workflow-design-derivation.md

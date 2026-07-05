@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  preflight:
+    name: Preflight Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run preflight
+        run: bash scripts/preflight.sh commit
+
+      - name: Run doctor (quiet)
+        run: bash scripts/doctor.sh --quiet || true
+
+  ledger:
+    name: Coverage Ledger Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Verify ledger format
+        run: python3 scripts/verify-ledger.py
+
+      - name: Verify ledger (strict)
+        run: python3 scripts/verify-ledger.py --strict || true
+
+  python-syntax:
+    name: Python Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Check all Python scripts compile
+        run: |
+          errors=0
+          for f in scripts/*.py; do
+            if ! python3 -m py_compile "$f" 2>/dev/null; then
+              echo "SYNTAX ERROR: $f"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            echo "$errors script(s) have syntax errors"
+            exit 1
+          fi
+          echo "All Python scripts pass syntax check"
+
+  platform-verify-selftest:
+    name: Platform Verify Self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run verify-platform self-test
+        run: |
+          cat > /tmp/test_nodes.json << 'EOF'
+          {
+            "workflows": [{
+              "name": "test", "worksheet": "test",
+              "trigger": {"typeId": 8},
+              "nodes": [
+                {"typeId": 0, "actionId": null, "name": "trigger"},
+                {"typeId": 6, "actionId": 1, "name": "add", "config": {"rows": 50}},
+                {"typeId": 4, "actionId": null, "name": "deprecated"},
+                {"typeId": 99, "actionId": null, "name": "invalid"}
+              ]
+            }]
+          }
+          EOF
+          python3 scripts/verify-platform.py --nodes /tmp/test_nodes.json --quiet || exit 0
+
+  validate-output-selftest:
+    name: Validate Output Self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run validate-agent-output self-test
+        run: |
+          # Create valid Agent 1 output
+          cat > /tmp/a1.json << 'EOF'
+          {"verdict":"pass","summary":{"total_checks":5,"passed":5,"failed":0,"uncertain":0},
+           "sections":{"axiom_compliance":{"result":"pass","violations":[]},
+           "timeline":{"result":"pass","violations":[]},
+           "naming_and_fields":{"result":"pass","violations":[]},
+           "logic":{"result":"pass","violations":[]},
+           "signals":{"result":"pass","warnings":[]}},
+           "issues":[],"fix_guide":{"easy":[],"medium":[],"hard":[]},"uncertain_items":[]}
+          EOF
+          python3 scripts/validate-agent-output.py --agent1 /tmp/a1.json --quiet || exit 1

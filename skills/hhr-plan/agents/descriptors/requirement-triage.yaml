@@ -1,0 +1,27 @@
+interface:
+  display_name: "需求分流"
+  short_description: "判断一个需求是否适合在明道云平台实现、应该进哪个模式、是否有必要先做价值判断。"
+  mode: "pre"
+  category: "triage"
+  triggers:
+    - "我想做..."
+    - "能不能..."
+    - "适不适合..."
+    - "有没有必要..."
+    - "值不值得..."
+    - "怎么做..."
+  requires:
+    - system-prompt.md
+  tools: []
+  produces:
+    - 可行性判断（可行/不可行/需先确认）
+    - 模式路由（Mode A/B/C/D 或 think skill）
+    - 需要用户确认的问题清单
+  verification:
+    method: "对照 Hard Stops 条件逐条检查"
+  pipeline: "3 checks: 平台边界→公理约束→模式路由"
+  blocking_steps:
+    - "平台不支持时直接告知"
+    - "需求违反公理 MUST NOT 时说明原因"
+  references:
+    - built-in-skills/requirement-triage.md

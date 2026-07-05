@@ -1,0 +1,28 @@
+interface:
+  display_name: "模式匹配"
+  short_description: "从已知的工作流设计模式库中选择最匹配的模式。输入是设计需求，输出是推荐的模式编号+适配建议。"
+  mode: "utility"
+  category: "design-support"
+  triggers:
+    - "用什么模式"
+    - "参考哪个..."
+    - "有没有类似的..."
+    - "怎么设计这个流程"
+    - "找模版"
+  requires:
+    - references/patterns/README.md
+    - references/patterns/button-trigger.md
+    - references/patterns/event-trigger.md
+    - references/patterns/single-sign.md
+    - references/patterns/multi-level.md
+    - references/patterns/dedup-check.md
+  tools: []
+  produces:
+    - 匹配的模式编号（A-E + 细分变体）
+    - 适配建议（哪些参数需要调整）
+    - 公理符合度标注
+  verification: {}
+  pipeline: "3 steps: 需求特征提取→模式库匹配→适配建议"
+  references:
+    - built-in-skills/pattern-select.md
+    - references/patterns/README.md

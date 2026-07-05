@@ -1,0 +1,42 @@
+interface:
+  display_name: "绿地设计"
+  short_description: "从零设计一个新的明道云应用。输入是业务需求，输出是完整的表结构+工作流+字段配置方案。"
+  mode: "A"
+  category: "design"
+  triggers:
+    - "新建一个..."
+    - "从零设计..."
+    - "创建一个应用"
+    - "搭一个新模块"
+    - "设计表结构"
+    - "greenfield"
+  requires:
+    - system-prompt.md
+    - references/templates/field-basic.md
+    - references/templates/field-association.md
+    - references/templates/field-subtable.md
+    - references/templates/output-template.md
+  tools:
+    - scripts/agent_prepare.py
+    - scripts/design_validator.py
+    - scripts/lock_manager.py
+  produces:
+    - 工作表定义（名称、编号、Hub/Spoke 角色）
+    - 字段配置（逐字段类型、关联、默认值）
+    - 工作流节点链（触发器→节点→节点...）
+    - SOP 操作文档
+    - execution_lock.json（设计方案合约）
+  verification:
+    primary: "Agent 1 (逻辑: 5-section 公理+时序+命名+逻辑+信号)"
+    secondary: "Agent 2 (平台: 节点类型+子模式+上限+拓扑)"
+    gate: "双门控 — 任一 Agent fail 则阻断输出"
+  pipeline: "7 steps: 平台边界→五问推导→Design Confirm→建表→建工作流→字段配置→门控输出"
+  blocking_steps:
+    - "Step 0: 平台不可行时停"
+    - "Design Confirm: Tier 1 + Tier 2 需用户确认"
+    - "Step 7: Agent 1 或 Agent 2 不通过时停"
+  references:
+    - built-in-skills/mode-a-greenfield.md
+    - references/data-model-derivation.md
+    - references/workflow-design-derivation.md
+    - references/design-review-protocol.md

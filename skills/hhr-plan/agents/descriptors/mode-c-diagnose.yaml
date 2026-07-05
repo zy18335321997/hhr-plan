@@ -1,0 +1,45 @@
+interface:
+  display_name: "诊断排查"
+  short_description: "排查线上问题：为什么没数据、为什么流程卡住、为什么字段值不对。输入是症状+项目上下文，输出是根因+影响面+检查步骤。"
+  mode: "C"
+  category: "diagnosis"
+  triggers:
+    - "为什么..."
+    - "排查..."
+    - "不工作"
+    - "不对"
+    - "报错"
+    - "卡住"
+    - "没有数据"
+    - "值不对"
+    - "多了一条"
+    - "少了一条"
+    - "以前可以现在不行"
+  requires:
+    - system-prompt.md
+    - 项目 project_context.json
+    - 项目 business-flow-manifest.json
+    - 项目 _search_index.db（FTS5 索引）
+  tools:
+    - scripts/search.py
+    - scripts/rebuild_graph.py --lifecycle
+    - hap-bridge wf-nodes --raw
+    - hap-bridge call get_worksheet_structure
+    - scripts/diagnose.py（自动化管线）
+  produces:
+    - 术语映射（客户用语→系统实体）
+    - 工作流定位（PID + 触发表 + 节点链）
+    - 数据流时序标注
+    - 根因假说（概率排序）
+    - 影响面评估
+    - 修复建议
+  verification:
+    method: "穷举写入路径→标注触发条件→对照现象排除"
+    gate: "连续 3 个假说不成立时 Hard Stop"
+  pipeline: "6 steps: 术语映射→问题路由→数据流追踪→根因分析→影响面→收拢"
+  blocking_steps:
+    - "Step 0: 术语歧义时停（等用户确认含义）"
+    - "Step 3: 连续 3 个假说不成立时 Hard Stop"
+  references:
+    - built-in-skills/mode-c-diagnose.md
+    - references/lessons-learned.md
