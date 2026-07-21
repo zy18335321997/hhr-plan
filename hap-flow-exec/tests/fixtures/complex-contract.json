@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "source_design": "design_spec.md",
+    "project": "测试项目",
+    "created": "2026-07-21",
+    "workflow_name": "采购审批",
+    "node_count": 4
+  },
+  "target": {
+    "org_id": "org-001",
+    "app_id": "app-001",
+    "worksheet_id": "ws-purchase"
+  },
+  "trigger": {
+    "type": "button",
+    "config": {
+      "name": "提交",
+      "worksheet_id": "ws-purchase",
+      "app_id": "app-001"
+    }
+  },
+  "nodes": [
+    {
+      "seq": "T1",
+      "alias": "mark_submitted",
+      "nodeType": "update_record",
+      "type_id": 6,
+      "action_id": 2,
+      "name": "标记已提交",
+      "config": {
+        "worksheet": "ws-purchase",
+        "target": {"node": "trigger"},
+        "fields": [
+          {
+            "fieldId": "field-status",
+            "value": "22222222-2222-2222-2222-222222222222"
+          }
+        ]
+      }
+    },
+    {
+      "seq": "T2",
+      "alias": "check_amount",
+      "nodeType": "branch",
+      "type_id": 1,
+      "name": "判断金额",
+      "config": {
+        "target": {"node": "mark_submitted"},
+        "paths": [
+          {
+            "name": "需要审批",
+            "condition": {
+              "left": {
+                "fieldId": "field-status",
+                "node": "mark_submitted",
+                "_filedTypeId": 9
+              },
+              "op": "eq",
+              "right": {
+                "kind": "literal",
+                "value": "22222222-2222-2222-2222-222222222222"
+              }
+            },
+            "nodes": ["approval", "archive_subprocess"]
+          }
+        ]
+      }
+    },
+    {
+      "seq": "T3",
+      "alias": "approval",
+      "nodeType": "approval_block",
+      "type_id": 26,
+      "name": "采购审批",
+      "config": {
+        "target": {"node": "mark_submitted"},
+        "process": {
+          "mode": "create",
+          "name": "采购审批内部流程",
+          "nodes": [
+            {
+              "nodeAlias": "approval_start",
+              "nodeType": "approval_start",
+              "config": {}
+            },
+            {
+              "nodeAlias": "approve_step",
+              "nodeType": "approve",
+              "name": "领导审批",
+              "config": {
+                "target": {"node": "approval_start"},
+                "allowReject": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": "T4",
+      "alias": "archive_subprocess",
+      "nodeType": "sub_process",
+      "type_id": 16,
+      "name": "归档子流程",
+      "config": {
+        "target": {"node": "mark_submitted"},
+        "process": {
+          "mode": "create",
+          "name": "采购归档",
+          "nodes": []
+        }
+      }
+    }
+  ],
+  "field_references": [
+    {
+      "fieldId": "field-status",
+      "worksheet": "ws-purchase",
+      "fieldName": "状态",
+      "type": "SingleSelect",
+      "expected_options": [
+        {
+          "key": "11111111-1111-1111-1111-111111111111",
+          "label": "草稿"
+        },
+        {
+          "key": "22222222-2222-2222-2222-222222222222",
+          "label": "已提交"
+        }
+      ]
+    }
+  ],
+  "dependencies": {"subprocesses": [{"name": "采购归档", "pid": null}]},
+  "publish_order": ["subprocesses", "main_workflow"]
+}
