@@ -1,0 +1,20 @@
+{
+  "project": "几建",
+  "snapshot_version": "1.0",
+  "generated_at": "2026-07-16T05:54:20.773523+00:00",
+  "source": "regression_test.py",
+  "metrics": {
+    "worksheet_count": 136,
+    "dependency_graph": {
+      "node_count": 164,
+      "edge_count": 1076,
+      "bidirectional_edge_pairs": []
+    },
+    "workflow_count": 338
+  },
+  "axiom_scores": {
+    "comparison": "delegated",
+    "note": "公理评分需要 LLM 判断, 不做确定性比较"
+  },
+  "extraction_errors": []
+}

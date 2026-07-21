@@ -1,0 +1,479 @@
+{
+  "generated_at": "2026-07-16T05:55:03.704209+00:00",
+  "source": "skill_discovery.py",
+  "skill_dir": "/Users/mac/.claude/skills/hhr-plan",
+  "modes": {
+    "mode-a-greenfield": {
+      "display_name": "绿地设计",
+      "short_description": "从零设计一个新的明道云应用。输入是业务需求，输出是完整的表结构+工作流+字段配置方案。",
+      "mode": "A",
+      "category": "design",
+      "triggers": [
+        "新建一个...",
+        "从零设计...",
+        "创建一个应用",
+        "搭一个新模块",
+        "设计表结构",
+        "greenfield"
+      ],
+      "requires": [
+        "system-prompt.md",
+        "references/templates/field-basic.md",
+        "references/templates/field-association.md",
+        "references/templates/field-subtable.md",
+        "references/templates/output-template.md"
+      ],
+      "tools": [
+        "scripts/agent_prepare.py",
+        "scripts/design_validator.py",
+        "scripts/lock_manager.py"
+      ],
+      "produces": [
+        "工作表定义（名称、编号、Hub/Spoke 角色）",
+        "字段配置（逐字段类型、关联、默认值）",
+        "工作流节点链（触发器→节点→节点...）",
+        "SOP 操作文档",
+        "execution_lock.json（设计方案合约）"
+      ],
+      "verification": {
+        "primary": "Agent 1 (逻辑: 5-section 公理+时序+命名+逻辑+信号)",
+        "secondary": "Agent 2 (平台: 节点类型+子模式+上限+拓扑)",
+        "gate": "双门控 — 任一 Agent fail 则阻断输出"
+      },
+      "pipeline": "7 steps: 平台边界→五问推导→Design Confirm→建表→建工作流→字段配置→门控输出",
+      "blocking_steps": [
+        "Step 0: 平台不可行时停",
+        "Design Confirm: Tier 1 + Tier 2 需用户确认",
+        "Step 7: Agent 1 或 Agent 2 不通过时停"
+      ],
+      "references": [
+        "built-in-skills/mode-a-greenfield.md",
+        "references/data-model-derivation.md",
+        "references/workflow-design-derivation.md",
+        "references/design-review-protocol.md"
+      ],
+      "_descriptor_path": "agents/descriptors/mode-a-greenfield.yaml",
+      "skill_md": "built-in-skills/mode-a-greenfield.md",
+      "agent_md": null
+    },
+    "mode-b-brownfield": {
+      "display_name": "棕地改造",
+      "short_description": "在已有明道云应用上进行修改、扩展或优化。输入是需求+项目上下文，输出是增量变更方案+影响面报告。",
+      "mode": "B",
+      "category": "design",
+      "triggers": [
+        "改这个工作流",
+        "加个字段",
+        "加张表",
+        "修改...",
+        "扩展...",
+        "优化...",
+        "brownfield"
+      ],
+      "requires": [
+        "system-prompt.md",
+        "references/templates/field-association.md",
+        "references/templates/output-template.md",
+        "项目 project_context.json",
+        "项目 dependency_graph.json",
+        "项目 business-flow-manifest.json"
+      ],
+      "tools": [
+        "scripts/rebuild_graph.py --lifecycle",
+        "scripts/search.py",
+        "hap-bridge wf-nodes --raw",
+        "scripts/agent_prepare.py",
+        "scripts/design_validator.py"
+      ],
+      "produces": [
+        "影响面报告（哪些表/工作流受影响）",
+        "增量变更方案（新增/修改的表和字段）",
+        "工作流修改方案（节点增删改）",
+        "execution_lock.json"
+      ],
+      "verification": {
+        "primary": "Agent 1 (逻辑: 5-section, 含时序校验)",
+        "secondary": "Agent 2 (平台: 节点类型+数据链路+拓扑)",
+        "gate": "双门控 — 任一 Agent fail 则阻断输出"
+      },
+      "pipeline": "4 steps: 上下文确认→影响面分析→增量构建→门控输出",
+      "blocking_steps": [
+        "Step 0: 上下文不足时停 (Tier 1 + Tier 2)",
+        "Step 1: 影响面 >10 个工作流时 Hard Stop",
+        "Step 3: Agent 1 或 Agent 2 不通过时停"
+      ],
+      "references": [
+        "built-in-skills/mode-b-brownfield.md",
+        "references/workflow-design-derivation.md"
+      ],
+      "_descriptor_path": "agents/descriptors/mode-b-brownfield.yaml",
+      "skill_md": "built-in-skills/mode-b-brownfield.md",
+      "agent_md": null
+    },
+    "mode-c-diagnose": {
+      "display_name": "诊断排查",
+      "short_description": "排查线上问题：为什么没数据、为什么流程卡住、为什么字段值不对。输入是症状+项目上下文，输出是根因+影响面+检查步骤。",
+      "mode": "C",
+      "category": "diagnosis",
+      "triggers": [
+        "为什么...",
+        "排查...",
+        "不工作",
+        "不对",
+        "报错",
+        "卡住",
+        "没有数据",
+        "值不对",
+        "多了一条",
+        "少了一条",
+        "以前可以现在不行"
+      ],
+      "requires": [
+        "system-prompt.md",
+        "项目 project_context.json",
+        "项目 business-flow-manifest.json",
+        "项目 _search_index.db（FTS5 索引）"
+      ],
+      "tools": [
+        "scripts/search.py",
+        "scripts/rebuild_graph.py --lifecycle",
+        "hap-bridge wf-nodes --raw",
+        "hap-bridge call get_worksheet_structure",
+        "scripts/diagnose.py（自动化管线）"
+      ],
+      "produces": [
+        "术语映射（客户用语→系统实体）",
+        "工作流定位（PID + 触发表 + 节点链）",
+        "数据流时序标注",
+        "根因假说（概率排序）",
+        "影响面评估",
+        "修复建议"
+      ],
+      "verification": {
+        "method": "穷举写入路径→标注触发条件→对照现象排除",
+        "gate": "连续 3 个假说不成立时 Hard Stop"
+      },
+      "pipeline": "6 steps: 术语映射→问题路由→数据流追踪→根因分析→影响面→收拢",
+      "blocking_steps": [
+        "Step 0: 术语歧义时停（等用户确认含义）",
+        "Step 3: 连续 3 个假说不成立时 Hard Stop"
+      ],
+      "references": [
+        "built-in-skills/mode-c-diagnose.md",
+        "references/lessons-learned.md"
+      ],
+      "_descriptor_path": "agents/descriptors/mode-c-diagnose.yaml",
+      "skill_md": "built-in-skills/mode-c-diagnose.md",
+      "agent_md": null
+    },
+    "mode-d-audit": {
+      "display_name": "健康审计",
+      "short_description": "对已有明道云应用做系统级公理合规扫描。输出评分卡、问题清单（按严重度排序）、修复建议。",
+      "mode": "D",
+      "category": "audit",
+      "triggers": [
+        "检查这个项目",
+        "审计",
+        "健康度",
+        "合规扫描",
+        "代码质量",
+        "项目体检",
+        "audit",
+        "评分"
+      ],
+      "requires": [
+        "system-prompt.md",
+        "项目 project_context.json",
+        "项目 business-flow-manifest.json",
+        "项目 _node_data.json",
+        "项目 dependency_graph.json"
+      ],
+      "tools": [
+        "scripts/auto_sync.py",
+        "scripts/build_snapshot.py",
+        "scripts/generate_node_data.py",
+        "scripts/rebuild_graph.py",
+        "scripts/search.py"
+      ],
+      "produces": [
+        "项目快照（project-snapshot.md）",
+        "五维度评分卡（公理1-5 逐项得分）",
+        "问题清单（severity: high/medium/low）",
+        "DAG 拓扑图",
+        "修复 SOP"
+      ],
+      "verification": {
+        "primary": "Agent 1 + Agent 2 (设计质量)",
+        "secondary": "Agent 3 (audit-scanner: 扫描完整性)",
+        "gate": "Agent 3 不通过时补扫; Agent 1/2 不通过时修正"
+      },
+      "pipeline": "3 steps: 扫描准备→五维度扫描→门控验证→输出",
+      "blocking_steps": [
+        "Step 1: 项目数据不可用时停",
+        "Step 3: Agent 3 不通过时补扫后重检"
+      ],
+      "references": [
+        "built-in-skills/mode-d-audit.md",
+        "agents/audit-scanner.md",
+        "references/axioms/evidence-matrix.md"
+      ],
+      "_descriptor_path": "agents/descriptors/mode-d-audit.yaml",
+      "skill_md": "built-in-skills/mode-d-audit.md",
+      "agent_md": "agents/audit-scanner.md"
+    },
+    "pattern-select": {
+      "display_name": "模式匹配",
+      "short_description": "从已知的工作流设计模式库中选择最匹配的模式。输入是设计需求，输出是推荐的模式编号+适配建议。",
+      "mode": "utility",
+      "category": "design-support",
+      "triggers": [
+        "用什么模式",
+        "参考哪个...",
+        "有没有类似的...",
+        "怎么设计这个流程",
+        "找模版"
+      ],
+      "requires": [
+        "references/patterns/README.md",
+        "references/patterns/button-trigger.md",
+        "references/patterns/event-trigger.md",
+        "references/patterns/single-sign.md",
+        "references/patterns/multi-level.md",
+        "references/patterns/dedup-check.md"
+      ],
+      "tools": "[]",
+      "produces": [
+        "匹配的模式编号（A-E + 细分变体）",
+        "适配建议（哪些参数需要调整）",
+        "公理符合度标注"
+      ],
+      "verification": "{}",
+      "pipeline": "3 steps: 需求特征提取→模式库匹配→适配建议",
+      "references": [
+        "built-in-skills/pattern-select.md",
+        "references/patterns/README.md"
+      ],
+      "_descriptor_path": "agents/descriptors/pattern-select.yaml",
+      "skill_md": "built-in-skills/pattern-select.md",
+      "agent_md": null
+    },
+    "plain-language-check": {
+      "display_name": "自然语言校验",
+      "short_description": "检查输出文档中的术语是否使用客户语言而非系统内部术语。确保客户能看懂方案文档。",
+      "mode": "utility",
+      "category": "quality",
+      "triggers": [
+        "检查语言",
+        "去术语",
+        "客户能看懂吗",
+        "翻译成客户语言",
+        "plain language"
+      ],
+      "requires": [
+        "项目 aliases.json"
+      ],
+      "tools": "[]",
+      "produces": [
+        "术语替换清单（系统术语→客户语言）",
+        "未被 aliases.json 覆盖的术语（需确认）"
+      ],
+      "verification": "{}",
+      "pipeline": "2 steps: 扫描系统术语→对照 aliases.json 替换",
+      "references": [
+        "built-in-skills/plain-language-check.md"
+      ],
+      "_descriptor_path": "agents/descriptors/plain-language-check.yaml",
+      "skill_md": "built-in-skills/plain-language-check.md",
+      "agent_md": null
+    },
+    "requirement-triage": {
+      "display_name": "需求分流",
+      "short_description": "判断一个需求是否适合在明道云平台实现、应该进哪个模式、是否有必要先做价值判断。",
+      "mode": "pre",
+      "category": "triage",
+      "triggers": [
+        "我想做...",
+        "能不能...",
+        "适不适合...",
+        "有没有必要...",
+        "值不值得...",
+        "怎么做..."
+      ],
+      "requires": [
+        "system-prompt.md"
+      ],
+      "tools": "[]",
+      "produces": [
+        "可行性判断（可行/不可行/需先确认）",
+        "模式路由（Mode A/B/C/D 或 think skill）",
+        "需要用户确认的问题清单"
+      ],
+      "verification": {
+        "method": "对照 Hard Stops 条件逐条检查"
+      },
+      "pipeline": "3 checks: 平台边界→公理约束→模式路由",
+      "blocking_steps": [
+        "平台不支持时直接告知",
+        "需求违反公理 MUST NOT 时说明原因"
+      ],
+      "references": [
+        "built-in-skills/requirement-triage.md"
+      ],
+      "_descriptor_path": "agents/descriptors/requirement-triage.yaml",
+      "skill_md": "built-in-skills/requirement-triage.md",
+      "agent_md": null
+    }
+  },
+  "scripts": {
+    "agent_prepare.py": {
+      "description": "Agent 上下文预处理器 — 从 execution_lock.json 生成 Agent 可读的简洁摘要。",
+      "arguments": [
+        "--output"
+      ]
+    },
+    "aggregate.py": {
+      "description": "Hu Haoran Methodology Distiller - Phase 0 & Phase 1",
+      "arguments": []
+    },
+    "auth.py": {
+      "description": "Auth module: read Chrome cookies for Mingdao API access.",
+      "arguments": []
+    },
+    "auto_sync.py": {
+      "description": "Auto-sync all derived data (index, graph, topology).",
+      "arguments": []
+    },
+    "batch_cli_fetch.py": {
+      "description": "CLI 批量拉取全量工作流节点数据 → 覆盖旧缓存 → 重建所有索引",
+      "arguments": []
+    },
+    "batch_mcp_fetch.py": {
+      "description": "MCP 批量拉取所有工作流名称+基本信息 → 重建 name_index.json + sheet_workflows.json",
+      "arguments": []
+    },
+    "build_context.py": {
+      "description": "Project Context Extractor",
+      "arguments": []
+    },
+    "build_search_index.py": {
+      "description": "Build FTS5 search index for hhr-plan project data.",
+      "arguments": []
+    },
+    "build_snapshot.py": {
+      "description": "Project Snapshot Builder",
+      "arguments": []
+    },
+    "contract_compat.py": {
+      "description": "合约兼容性验证 — 验证 execution_contract.json 与 hap-flow-exec 的 schema 兼容性。",
+      "arguments": [
+        "--quiet",
+        "--all-projects"
+      ]
+    },
+    "design_validator.py": {
+      "description": "自动化设计验证器 — Gate 1 (依赖图) + Gate 4 (字段存在性)",
+      "arguments": [
+        "--check-fields",
+        "--check-graph",
+        "--new-edge",
+        "--check-all",
+        "--plan-file"
+      ]
+    },
+    "diagnose.py": {
+      "description": "Customer Diagnostic Assistant",
+      "arguments": []
+    },
+    "extract-project.py": {
+      "description": "Full project extraction — 替代 workflow-analyzer。",
+      "arguments": []
+    },
+    "extract-via-browser.py": {
+      "description": "无 MCP 项目提取 — 通过 AppleScript + Chrome Console JS 注入工作流数据。",
+      "arguments": []
+    },
+    "generate_manual.py": {
+      "description": "Customer-Facing Operations Guide Generator",
+      "arguments": []
+    },
+    "generate_node_data.py": {
+      "description": "Generate _node_data.json with enriched trigger types + node-level summary.",
+      "arguments": []
+    },
+    "generate_topology.py": {
+      "description": "Generate global-topology.md from dependency_graph.json.",
+      "arguments": []
+    },
+    "lock_manager.py": {
+      "description": "execution_lock.json 管理器 — 生成骨架、验证、合并更新。",
+      "arguments": [
+        "--mode",
+        "--output",
+        "--update"
+      ]
+    },
+    "platform-validate.py": {
+      "description": "Gate 4: 平台原生校验 — 地面真相。",
+      "arguments": [
+        "--workflow-id",
+        "--lock-file"
+      ]
+    },
+    "rebuild_graph.py": {
+      "description": "Rebuild dependency graph from extracted workflow data.",
+      "arguments": []
+    },
+    "regression_test.py": {
+      "description": "Mode D 审计回归测试 — 对确定性审计指标做快照回归。",
+      "arguments": [
+        "--project",
+        "--update-golden",
+        "--quiet",
+        "--check-format"
+      ]
+    },
+    "search.py": {
+      "description": "Query the FTS5 search index for hhr-plan project data.",
+      "arguments": []
+    },
+    "sheet_workflows.py": {
+      "description": "Sheet → Workflows 反向索引查询（含 search.py 交叉校验）",
+      "arguments": []
+    },
+    "summarize-output.py": {
+      "description": "Token 预算版摘要 — 将 Agent 1/2 的完整 JSON 压缩为 Agent 可消费的简短格式。",
+      "arguments": [
+        "--agent1",
+        "--agent2",
+        "--quiet"
+      ]
+    },
+    "validate-agent-output.py": {
+      "description": "后置闸门 — 验证 Agent 1/2/3 输出格式的完整性和一致性。",
+      "arguments": [
+        "--agent1",
+        "--agent2",
+        "--agent3",
+        "--input",
+        "--quiet"
+      ]
+    },
+    "verify-ledger.py": {
+      "description": "验证覆盖台账格式完整性和一致性。",
+      "arguments": []
+    },
+    "verify-platform.py": {
+      "description": "确定性平台能力校验 — 替代 Agent 2 中约 60% 的机械检查。",
+      "arguments": [
+        "--nodes",
+        "--lock-file",
+        "--project",
+        "--quiet"
+      ]
+    },
+    "wf_fetch.py": {
+      "description": "工作流节点获取（本地优先 + 自动缓存 + 名称/PID/触发表绑定）",
+      "arguments": []
+    }
+  }
+}

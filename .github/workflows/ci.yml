@@ -120,3 +120,74 @@ jobs:
            "issues":[],"fix_guide":{"easy":[],"medium":[],"hard":[]},"uncertain_items":[]}
           EOF
           python3 scripts/validate-agent-output.py --agent1 /tmp/a1.json --quiet || exit 1
+
+  skill-registry:
+    name: Skill Registry Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Validate skill registry consistency
+        run: python3 scripts/skill_discovery.py validate
+
+      - name: Ensure registry file exists and is valid JSON
+        run: |
+          if ! python3 -c "import json; json.load(open('references/skill-registry.json'))" 2>/dev/null; then
+            echo "ERROR: skill-registry.json is missing or invalid"
+            exit 1
+          fi
+          echo "skill-registry.json is valid JSON"
+
+  contract-compat-check:
+    name: Contract Compatibility Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cross-validate VALID_TYPE_IDS
+        run: python3 scripts/contract_compat.py check-schema
+
+      - name: Validate contract with test data (valid)
+        run: |
+          cat > /tmp/valid_contract.json << 'CEOF'
+          {
+            "meta": {"schema_version": "1.0", "project": "test", "mode": "A", "created": "2026-07-16", "axioms_covered": ["公理1"], "confidence": "HIGH"},
+            "naming": {"auto_number_prefix": "T", "workflow_verb_prefixes": ["创建"], "worksheet_suffix_format": "子表", "bool_field_prefix": "是否", "field_ordering": ["身份标识"]},
+            "sheets": [{"name": "t", "module": "t", "is_hub": true, "fields": [{"name": "n", "type": "Text", "required": true, "unique": false}]}],
+            "associations": [],
+            "workflows": [{"name": "w", "trigger_sheet": "t", "trigger_type": "button", "node_chain": [{"index": "T0", "node_type": "触发", "type_id": 0, "description": "触发"}]}],
+            "gates": {"gate_1_dependency": {"result": "pass", "issues": []}, "gate_2_logic": {"result": "pass", "issues": []}, "gate_3_timing": {"result": "n/a", "issues": []}, "gate_4_fields": {"result": "pass", "issues": []}, "gate_5_platform": {"result": "pass", "issues": []}, "gate_6_reasoning": {"result": "pass", "issues": []}}
+          }
+          CEOF
+          python3 scripts/contract_compat.py validate /tmp/valid_contract.json --quiet || exit 1
+
+      - name: Validate contract with test data (invalid)
+        run: |
+          cat > /tmp/invalid_contract.json << 'CEOF'
+          {"meta": {}, "workflows": [{"node_chain": [{"type_id": 999}]}]}
+          CEOF
+          python3 scripts/contract_compat.py validate /tmp/invalid_contract.json --quiet && exit 1 || exit 0
+
+  regression-audit:
+    name: Regression Audit (Format Check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Check golden snapshot format
+        run: python3 scripts/regression_test.py --check-format

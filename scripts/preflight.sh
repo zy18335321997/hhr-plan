@@ -92,9 +92,32 @@ else
     fail "coverage-ledger.tsv 验证失败 — 运行 verify-ledger.py 查看详情"
 fi
 
+# ── 所有模式: 技能注册表一致性 ──
+echo ""
+echo "[5] 技能注册表一致性"
+if python3 "$SKILL_DIR/scripts/skill_discovery.py" validate 2>/dev/null; then
+    ok "skill-registry.json 与源文件一致"
+else
+    fail "skill-registry.json 过期 — 运行: python3 scripts/skill_discovery.py generate -o references/skill-registry.json"
+fi
+
+# ── 所有模式: 合约 schema 检查 ──
+echo ""
+echo "[6] 合约 Schema 检查"
+CONTRACT_SCHEMA="$SKILL_DIR/references/schemas/execution-contract-schema.json"
+if [[ -f "$CONTRACT_SCHEMA" ]]; then
+    if python3 "$SKILL_DIR/scripts/contract_compat.py" check-schema 2>/dev/null; then
+        ok "execution-contract-schema.json VALID_TYPE_IDS 一致"
+    else
+        fail "execution-contract-schema.json VALID_TYPE_IDS 与 verify-platform.py 不一致"
+    fi
+else
+    fail "execution-contract-schema.json 缺失"
+fi
+
 # ── 所有模式: Agent 文件完整性 ──
 echo ""
-echo "[5] 文件布局检查"
+echo "[7] 文件布局检查"
 
 # scripts/ 下必须有 --help
 echo "  Scripts --help check:"
@@ -134,7 +157,7 @@ done
 # ── push 模式额外检查 ──
 if [[ "$MODE" == "push" ]]; then
     echo ""
-    echo "[6] Push 模式: Doctor 检查"
+    echo "[8] Push 模式: Doctor 检查"
     if bash "$SKILL_DIR/scripts/doctor.sh" --quiet 2>/dev/null; then
         ok "环境健康检查通过"
     else
@@ -142,7 +165,7 @@ if [[ "$MODE" == "push" ]]; then
     fi
 
     echo ""
-    echo "[7] Push 模式: 工作区状态"
+    echo "[9] Push 模式: 工作区状态"
     if git -C "$SKILL_DIR" diff --check 2>/dev/null; then
         ok "无空白字符问题"
     else

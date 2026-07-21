@@ -663,7 +663,7 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
 
 
 
-def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict]:
+def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str = "") -> dict[str, dict]:
     """For each workflow, get node structure via internal API.
 
     Returns {process_id: {name, worksheet, nodes, reads, writes, subs,
@@ -725,6 +725,7 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict
 
     print("  Extracting workflow nodes via internal API...")
     node_data = {}
+    raw_nodes = {}  # Store raw flowNodeMap for detail extraction and nodes.json
     total = len(wf_list)
     errors = 0
 
@@ -740,6 +741,14 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict
                 resp_data = json.loads(resp.read().decode())
 
             flow_node_map = resp_data.get("data", {}).get("flowNodeMap", {})
+
+            # Store raw nodes (with metadata) for Phase 3b detail extraction
+            raw_entry = dict(flow_node_map)
+            raw_entry["_name"] = wf.get("name", "")
+            raw_entry["_sheet"] = wf.get("worksheet", wf.get("appName", ""))
+            raw_entry["_trigger"] = wf.get("trigger", "")
+            raw_nodes[pid] = raw_entry
+
             reads, writes = set(), set()
             crud_mappings = []   # (node_name, target_table, field_names_written)
             query_empty_actions = []  # (node_name, table, executeType, isException)
@@ -750,13 +759,17 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict
                     continue
                 tid = node.get("typeId", -1)
                 name = node.get("name", "")
+                app_name = node.get("appName", "")
+                src_entity = node.get("sourceEntityName", "")
 
-                # CRUD node (typeId=6): sourceEntityName/selectNodeName = target worksheet
+                # typeId=6: CRUD node — sourceEntityName is the REAL target worksheet
                 if tid == 6:
-                    target = node.get("sourceEntityName", "") or node.get("selectNodeName", "")
-                    if target:
-                        writes.add(target)
-                        # Extract field mappings for 公理1
+                    target = src_entity  # Only trust sourceEntityName, not selectNodeName
+                    if target and target not in ("按钮触发", "获取关联记录", "工作表事件触发"):
+                        if "获取" in name or "查询" in name:
+                            reads.add(target)
+                        else:
+                            writes.add(target)
                         fields = node.get("fields", [])
                         if isinstance(fields, list):
                             field_names = []
@@ -769,27 +782,40 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict
                                 crud_mappings.append((name, target, field_names))
                     continue
 
-                # Query/GetRecord node (typeId=7, typeId=13): appName = target worksheet
-                if tid in (7, 13):
-                    target = node.get("appName", "")
+                # typeId=4: query sheet → READ
+                if tid == 4:
+                    if app_name:
+                        reads.add(app_name)
+                    continue
+
+                # typeId=7: get multiple → READ (appName or sourceEntityName)
+                if tid == 7:
+                    target = app_name or src_entity
                     if target:
                         reads.add(target)
-                        # Extract on-empty behavior for 公理5
                         et = node.get("executeType", -1)
                         is_exception = node.get("isException", False)
                         query_empty_actions.append((name, target, et, is_exception))
                     continue
-                
-                # Other read nodes (typeId=13 is also read but handled above)
-                # Legacy classification for any remaining nodes
-                app_name = node.get("appName", "")
-                if _is_write(name, tid) and app_name:
-                    writes.add(app_name)
-                elif _is_read(name, tid) and app_name:
-                    reads.add(app_name)
-                
+
+                # typeId=13: exception handler — appName for read context
+                if tid == 13:
+                    if app_name:
+                        reads.add(app_name)
+                    continue
+
+                # typeId=0: trigger — appName = the sheet hosting the trigger
+                if tid == 0:
+                    if app_name and not wf.get("worksheet"):
+                        wf["worksheet"] = app_name
+                    continue
+
+                # typeId=2,3: create/update — appName often empty in shallow data
+                # Target sheet comes from Phase 3b (_node_configs.json)
+                # We defer classification to build_manifest which reads _node_configs.json
+
                 # Approval nodes (公理2)
-                if tid in (10, 11):
+                if tid in (10, 11, 26, 27, 28):
                     approval_count += 1
 
             # Map trigger type
@@ -843,7 +869,138 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict]) -> dict[str, dict
         time.sleep(0.1)
 
     print(f"  Nodes extracted: {len(node_data)}/{total} ({errors} errors)")
+
+    # Save raw nodes.json for Phase 3b detail extraction
+    nodes_file = os.path.join(project_dir, "nodes.json")
+    with open(nodes_file, "w") as f:
+        json.dump(raw_nodes, f, ensure_ascii=False, indent=2)
+
     return node_data
+
+
+def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str) -> dict:
+    """Phase 3b: For each create/update node, call getNodeDetail to get fieldValues.
+
+    Reads nodes.json (saved by extract_workflow_nodes), calls getNodeDetail
+    for typeId=2 (create) and typeId=3 (update) nodes, saves to _node_configs.json.
+
+    Returns {pid: [{nodeId, nodeName, typeId, targetSheet, controls: [...]}]}
+    """
+    import auth
+
+    domain_match = re.match(r"https?://([^/:]+)", base_url)
+    domain = domain_match.group(1) if domain_match else "work.jijiansmart.com"
+    headers = auth.get_auth_headers(domain)
+    if not headers:
+        print("  [skip] Node detail extraction: no auth")
+        return {}
+
+    # Read the raw nodes.json saved by extract_workflow_nodes
+    nodes_file = os.path.join(project_dir, "nodes.json")
+    if not os.path.exists(nodes_file):
+        print("  [skip] nodes.json not found")
+        return {}
+
+    with open(nodes_file) as f:
+        raw_nodes = json.load(f)
+
+    # Collect all create/update nodes across all workflows
+    detail_jobs = []  # (pid, wf_name, node_id, type_id, node_name)
+    for pid, wf_data in raw_nodes.items():
+        if not isinstance(wf_data, dict):
+            continue
+        wf_name = wf_data.get("_name", pid[:16])
+        for nkey, node in wf_data.items():
+            if nkey.startswith("_") or not isinstance(node, dict):
+                continue
+            tid = node.get("typeId", -1)
+            if tid in (2, 3):  # create or update
+                detail_jobs.append((pid, wf_name, node.get("id", nkey), tid, node.get("name", "")))
+
+    if not detail_jobs:
+        print("  No create/update nodes found for detail extraction")
+        return {}
+
+    print(f"  Extracting field-level configs for {len(detail_jobs)} create/update nodes...")
+    node_configs = {}
+    errors = 0
+
+    for i, (pid, wf_name, node_id, type_id, node_name) in enumerate(detail_jobs):
+        try:
+            detail_url = (
+                f"{base_url}/api/workflow/flowNode/getNodeDetail"
+                f"?processId={pid}&nodeId={node_id}&flowNodeType={type_id}"
+            )
+            req = urllib.request.Request(detail_url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                detail = json.loads(resp.read().decode())
+
+            ddata = detail.get("data", detail)
+            if not isinstance(ddata, dict):
+                errors += 1
+                continue
+
+            # Extract target sheet info from flowNodeAppDtos
+            app_dtos = ddata.get("flowNodeAppDtos", [])
+            target_sheet = ""
+            controls = []
+
+            if isinstance(app_dtos, list) and app_dtos:
+                app0 = app_dtos[0]
+                target_sheet = app0.get("appName", "")
+                controls = app0.get("controls", [])
+
+            # Also check flowNodeList for field mapping
+            flow_node_list = ddata.get("flowNodeList", [])
+            conditions = ddata.get("conditions", [])
+
+            # Build compact config
+            config = {
+                "pid": pid,
+                "wf_name": wf_name,
+                "node_id": node_id,
+                "node_name": node_name,
+                "type_id": type_id,
+                "type_label": "新增记录" if type_id == 2 else "更新记录",
+                "target_sheet": target_sheet,
+                "conditions": conditions if conditions else [],
+                "controls": [],
+            }
+
+            for ctrl in controls:
+                if not isinstance(ctrl, dict):
+                    continue
+                config["controls"].append({
+                    "controlId": ctrl.get("controlId", ""),
+                    "controlName": ctrl.get("controlName", ""),
+                    "type": ctrl.get("type", ""),
+                    "required": ctrl.get("required", False),
+                    "dataSource": ctrl.get("dataSource", ""),
+                    "options": ctrl.get("options", [])[:20],  # limit option list
+                    "desc": ctrl.get("desc", ""),
+                })
+
+            if pid not in node_configs:
+                node_configs[pid] = []
+            node_configs[pid].append(config)
+
+            if (i + 1) % 20 == 0:
+                print(f"    {i + 1}/{len(detail_jobs)}...")
+            time.sleep(0.15)  # Rate limit
+
+        except Exception as e:
+            errors += 1
+
+    # Save
+    configs_file = os.path.join(project_dir, "_node_configs.json")
+    with open(configs_file, "w") as f:
+        json.dump(node_configs, f, ensure_ascii=False, indent=2)
+
+    total_nodes = sum(len(v) for v in node_configs.values())
+    wf_count = len(node_configs)
+    print(f"  Node configs extracted: {total_nodes} nodes across {wf_count} workflows ({errors} errors)")
+    print(f"  Saved to _node_configs.json")
+    return node_configs
 
 
 # ---------------------------------------------------------------------------
@@ -1219,7 +1376,13 @@ def main():
     if nodes_file:
         node_data = extract_workflow_nodes_from_file(nodes_file, wf_list)
     else:
-        node_data = extract_workflow_nodes(base_url, wf_list)
+        node_data = extract_workflow_nodes(base_url, wf_list, project_dir)
+
+    # Phase 3b: Deep node configs (fieldValues for create/update nodes)
+    if node_data and not nodes_file:
+        node_configs = extract_node_detail_configs(base_url, node_data, project_dir)
+    else:
+        node_configs = {}
 
     # Build outputs
     print("--- 生成输出文件 ---")

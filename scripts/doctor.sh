@@ -458,6 +458,49 @@ if bidir:
 done
 
 # ─────────────────────────────────────────────
+# Layer 5: 技能系统完整性
+# ─────────────────────────────────────────────
+
+phase "Layer 5: 技能系统"
+
+# 5.1 skill registry 一致性
+REGISTRY_FILE="$SKILL_DIR/references/skill-registry.json"
+if [[ -f "$REGISTRY_FILE" ]]; then
+    if python3 "$SKILL_DIR/scripts/skill_discovery.py" validate 2>/dev/null; then
+        ok "skill-registry.json 与源文件一致"
+    else
+        err "skill-registry.json 过期或损坏 — 运行: python3 scripts/skill_discovery.py generate -o references/skill-registry.json"
+    fi
+else
+    err "skill-registry.json 缺失 — 运行: python3 scripts/skill_discovery.py generate -o references/skill-registry.json"
+fi
+
+# 5.2 contract schema 检查
+CONTRACT_SCHEMA="$SKILL_DIR/references/schemas/execution-contract-schema.json"
+if [[ -f "$CONTRACT_SCHEMA" ]]; then
+    if python3 "$SKILL_DIR/scripts/contract_compat.py" check-schema 2>/dev/null; then
+        ok "execution-contract-schema.json VALID_TYPE_IDS 与 verify-platform.py 一致"
+    else
+        err "execution-contract-schema.json 的 VALID_TYPE_IDS 与 verify-platform.py 不一致"
+    fi
+else
+    warn "execution-contract-schema.json 缺失 — contract_compat.py 不可用"
+fi
+
+# 5.3 检查是否存在 regression golden snapshots
+REGRESSION_DIR="$SKILL_DIR/references/regression"
+if [[ -d "$REGRESSION_DIR" ]]; then
+    snapshot_count="$(find "$REGRESSION_DIR" -name "*-snapshot.json" | wc -l | tr -d ' ')"
+    if [[ "$snapshot_count" -gt 0 ]]; then
+        ok "regression golden snapshots: $snapshot_count 个"
+    else
+        warn "regression 目录存在但无 golden snapshot"
+    fi
+else
+    warn "references/regression/ 目录不存在 — regression_test.py 无 golden data"
+fi
+
+# ─────────────────────────────────────────────
 # 汇总
 # ─────────────────────────────────────────────
 
