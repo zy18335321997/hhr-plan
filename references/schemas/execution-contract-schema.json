@@ -1,42 +1,5 @@
 {
-  "$description": "execution_contract.json Schema — 与 execution-lock-schema.md 对齐，机器可校验的合约结构定义。",
-  "schema_version": "1.0",
-  "required_top_keys": ["meta", "naming", "sheets", "associations", "workflows", "gates"],
-  "meta": {
-    "required_keys": ["schema_version", "project", "mode", "created", "axioms_covered", "confidence"],
-    "valid_modes": ["A", "B"],
-    "valid_confidence": ["HIGH", "MEDIUM", "LOW"]
-  },
-  "naming": {
-    "required_keys": ["auto_number_prefix", "workflow_verb_prefixes", "worksheet_suffix_format", "bool_field_prefix", "field_ordering"]
-  },
-  "sheets": {
-    "is_array": true,
-    "required_keys": ["name", "module", "is_hub", "fields"],
-    "fields_required_keys": ["name", "type", "required", "unique"],
-    "valid_field_types": ["Text", "Number", "Date", "DateTime", "Attachment", "Image", "File", "Phone", "Email", "URL", "AutoNumber", "Money", "Percent", "Score", "Checkbox", "Member", "Dept", "SubTable", "Relation", "Rollup", "Lookup", "Formula", "Location", "Description", "Duration"],
-    "valid_association_types": [29, 30, 34],
-    "valid_association_labels": ["关联表", "他表字段", "子表"]
-  },
-  "associations": {
-    "is_array": true,
-    "required_keys": ["from_sheet", "to_sheet", "field_name", "type"]
-  },
-  "workflows": {
-    "is_array": true,
-    "required_keys": ["name", "trigger_sheet", "trigger_type", "node_chain"],
-    "valid_trigger_types": ["button", "event", "schedule", "subprocess"],
-    "valid_complexity": ["Simple", "Standard", "Complex", "VComplex"],
-    "valid_data_signature": ["Mutator", "Signal", "Creator", "Orchestrator"],
-    "node_chain_required_keys": ["index", "node_type", "type_id", "description"],
-    "valid_type_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 100, 101, 1000, 1001],
-    "valid_empty_strategies": ["继续执行", "中止", "continue", "abort", null],
-    "valid_approval_modes": ["或签", "会签", null],
-    "valid_subprocess_execution_modes": ["逐条", "批量", "单次", null],
-    "valid_subprocess_abort_strategies": ["继续下一条", "中止", null]
-  },
-  "gates": {
-    "required_keys": ["gate_1_dependency", "gate_2_logic", "gate_3_timing", "gate_4_fields", "gate_5_platform", "gate_6_reasoning"],
-    "valid_gate_results": ["pass", "fail", "n/a"]
-  }
+  "$description": "Deprecated compatibility marker. Lock validation moved to execution-lock-validation-schema.json; hap-flow-exec contracts are validated by scripts/contract_compat.py validate-exec.",
+  "deprecated": true,
+  "replacement": "execution-lock-validation-schema.json"
 }

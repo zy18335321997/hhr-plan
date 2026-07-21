@@ -27,26 +27,62 @@ import re
 import sys
 from pathlib import Path
 
+from agent_prepare import compute_lock_digest
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path.home() / "Documents" / "workflow-output"
 
 
-def load_project_context(project: str) -> dict:
-    path = DATA_DIR / project / "project_context.json"
-    if not path.exists():
-        print(f"ERROR: {path} not found", file=sys.stderr)
-        sys.exit(1)
-    with open(path) as f:
+def _load_json(path: Path) -> dict:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def load_dependency_graph(project: str) -> dict:
-    path = DATA_DIR / project / "dependency_graph.json"
+def load_project_context(project: str, context_file: str | None = None) -> dict:
+    """Load project context, with an injectable file for deterministic tests."""
+    path = Path(context_file) if context_file else DATA_DIR / project / "project_context.json"
     if not path.exists():
-        print(f"WARNING: {path} not found — Gate 1 checks skipped", file=sys.stderr)
-        return {"nodes": [], "edges": []}
-    with open(path) as f:
-        return json.load(f)
+        raise FileNotFoundError(f"{path} not found")
+    return _load_json(path)
+
+
+def load_dependency_graph(
+    project: str,
+    graph_file: str | None = None,
+    required: bool = False,
+) -> dict:
+    """Load dependency graph, optionally from an injected fixture."""
+    path = Path(graph_file) if graph_file else DATA_DIR / project / "dependency_graph.json"
+    if not path.exists():
+        if not required:
+            print(f"WARNING: {path} not found — Gate 1 checks skipped", file=sys.stderr)
+        return {
+            "nodes": [],
+            "edges": [],
+            "_missing_graph": str(path),
+        }
+    return _load_json(path)
+
+
+def _missing_graph_result(graph: dict, gate: str) -> dict | None:
+    missing_path = graph.get("_missing_graph")
+    if not missing_path:
+        return None
+    return {
+        "gate": gate,
+        "verdict": "fail",
+        "issues": [
+            {
+                "severity": "error",
+                "type": "dependency_graph_missing",
+                "path": missing_path,
+                "detail": (
+                    "依赖图是本次显式图校验的必需输入，"
+                    f"但文件不存在: {missing_path}"
+                ),
+            }
+        ],
+    }
 
 
 # ── Gate 4: 字段与实体存在性 ──────────────────────────────────────────
@@ -88,9 +124,59 @@ def _extract_refs_from_markdown(md_text: str) -> list[tuple[str, list[str]]]:
     return refs
 
 
-def check_field_existence(project: str, checks: list[tuple[str, list[str]]]) -> dict:
+def _extract_refs_from_lock(lock: dict) -> list[tuple[str, list[str]]]:
+    """Extract all named worksheet/field references from execution_lock."""
+    grouped: dict[str, set[str]] = {}
+
+    def add(sheet: object, fields: object = None) -> None:
+        if not isinstance(sheet, str) or not sheet:
+            return
+        bucket = grouped.setdefault(sheet, set())
+        if isinstance(fields, list):
+            bucket.update(
+                field for field in fields
+                if isinstance(field, str) and field
+            )
+
+    for sheet in lock.get("sheets", []):
+        if not isinstance(sheet, dict):
+            continue
+        add(
+            sheet.get("name"),
+            [
+                field.get("name")
+                for field in sheet.get("fields", [])
+                if isinstance(field, dict)
+            ],
+        )
+
+    for association in lock.get("associations", []):
+        if not isinstance(association, dict):
+            continue
+        add(association.get("from_sheet"), [association.get("field_name")])
+        add(association.get("to_sheet"))
+
+    for workflow in lock.get("workflows", []):
+        if not isinstance(workflow, dict):
+            continue
+        add(workflow.get("trigger_sheet"))
+        for node in workflow.get("node_chain", []):
+            if not isinstance(node, dict):
+                continue
+            add(node.get("target_sheet"), node.get("writes_fields", []))
+            add(node.get("target_sheet"), node.get("reads_fields", []))
+
+    return [(sheet, sorted(fields)) for sheet, fields in sorted(grouped.items())]
+
+
+def check_field_existence(
+    project: str,
+    checks: list[tuple[str, list[str]]],
+    context: dict | None = None,
+    context_file: str | None = None,
+) -> dict:
     """Gate 4: Validate sheet names and field names exist in project_context."""
-    ctx = load_project_context(project)
+    ctx = context if context is not None else load_project_context(project, context_file)
     sheets = ctx.get("worksheets", {})
 
     issues = []
@@ -137,9 +223,18 @@ def _build_adjacency(edges: list[dict]) -> dict[str, set[str]]:
     return adj
 
 
-def check_bidirectional_edges(project: str) -> dict:
+def check_bidirectional_edges(
+    project: str,
+    graph: dict | None = None,
+    graph_file: str | None = None,
+) -> dict:
     """Gate 1a: Detect bidirectional edge pairs (A->B AND B->A)."""
-    graph = load_dependency_graph(project)
+    graph = graph if graph is not None else load_dependency_graph(
+        project, graph_file, required=True
+    )
+    missing = _missing_graph_result(graph, "Gate 1a — 双向依赖检查")
+    if missing:
+        return missing
     edges = graph.get("edges", [])
     adj = _build_adjacency(edges)
 
@@ -175,9 +270,21 @@ def check_bidirectional_edges(project: str) -> dict:
     return result
 
 
-def check_proposed_edge(project: str, from_sheet: str, to_sheet: str) -> dict:
+def check_proposed_edge(
+    project: str,
+    from_sheet: str,
+    to_sheet: str,
+    graph: dict | None = None,
+    graph_file: str | None = None,
+) -> dict:
     """Gate 1b: Check if adding a proposed edge creates a cycle or bidirectional dep."""
-    graph = load_dependency_graph(project)
+    graph = graph if graph is not None else load_dependency_graph(
+        project, graph_file, required=True
+    )
+    gate = f"Gate 1b — 新增关联检查 ({from_sheet}→{to_sheet})"
+    missing = _missing_graph_result(graph, gate)
+    if missing:
+        return missing
     edges = graph.get("edges", [])
     adj = _build_adjacency(edges)
 
@@ -225,16 +332,25 @@ def check_proposed_edge(project: str, from_sheet: str, to_sheet: str) -> dict:
         del adj[from_sheet]
 
     result = {
-        "gate": f"Gate 1b — 新增关联检查 ({from_sheet}→{to_sheet})",
+        "gate": gate,
         "verdict": "pass" if not issues else "fail",
         "issues": issues
     }
     return result
 
 
-def check_dag_cycles(project: str) -> dict:
+def check_dag_cycles(
+    project: str,
+    graph: dict | None = None,
+    graph_file: str | None = None,
+) -> dict:
     """Gate 1c: Full DAG cycle detection using topological sort (Kahn's algorithm)."""
-    graph = load_dependency_graph(project)
+    graph = graph if graph is not None else load_dependency_graph(
+        project, graph_file, required=True
+    )
+    missing = _missing_graph_result(graph, "Gate 1c — DAG 环路检查")
+    if missing:
+        return missing
     edges = graph.get("edges", [])
 
     # Build adjacency and in-degree
@@ -292,6 +408,13 @@ def main():
     parser.add_argument("--new-edge", action="append", help="检查新增关联: '源表→目标表'（可多次使用）")
     parser.add_argument("--check-all", action="store_true", help="执行所有检查")
     parser.add_argument("--plan-file", help="从方案 Markdown 文件提取引用并检查")
+    parser.add_argument(
+        "--output",
+        help="将机器可读 JSON 写入指定文件；省略时输出到 stdout",
+    )
+    parser.add_argument("--lock-file", help="从 execution_lock.json 提取引用并检查")
+    parser.add_argument("--context-file", help="project_context.json 路径（覆盖 ~/Documents 默认路径）")
+    parser.add_argument("--graph-file", help="dependency_graph.json 路径（覆盖 ~/Documents 默认路径）")
     args = parser.parse_args()
 
     results = []
@@ -305,7 +428,13 @@ def main():
         if not all_checks and args.check_all:
             print("(Gate 4: no --check-fields specified, skipping)", file=sys.stderr)
         elif all_checks:
-            results.append(check_field_existence(args.project, all_checks))
+            results.append(
+                check_field_existence(
+                    args.project,
+                    all_checks,
+                    context_file=args.context_file,
+                )
+            )
 
     # Gate 4 from plan file
     if args.plan_file:
@@ -316,11 +445,62 @@ def main():
         md_text = path.read_text()
         checks = _extract_refs_from_markdown(md_text)
         if checks:
-            results.append(check_field_existence(args.project, checks))
+            results.append(
+                check_field_existence(
+                    args.project,
+                    checks,
+                    context_file=args.context_file,
+                )
+            )
+
+    lock_digest = None
+    # Gate 4 + Gate 1b from execution_lock.json
+    if args.lock_file:
+        lock_path = Path(args.lock_file)
+        if not lock_path.exists():
+            print(f"ERROR: {lock_path} not found", file=sys.stderr)
+            sys.exit(1)
+        try:
+            lock = _load_json(lock_path)
+            lock_digest = compute_lock_digest(lock)
+            checks = _extract_refs_from_lock(lock)
+            if checks:
+                results.append(
+                    check_field_existence(
+                        args.project,
+                        checks,
+                        context_file=args.context_file,
+                    )
+                )
+            associations = lock.get("associations", [])
+            graph = load_dependency_graph(
+                args.project,
+                args.graph_file,
+                required=bool(associations),
+            )
+            for association in associations:
+                if not isinstance(association, dict):
+                    continue
+                from_sheet = association.get("from_sheet")
+                to_sheet = association.get("to_sheet")
+                if from_sheet and to_sheet:
+                    results.append(
+                        check_proposed_edge(
+                            args.project,
+                            from_sheet,
+                            to_sheet,
+                            graph=graph,
+                        )
+                    )
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            print(f"ERROR: 无法读取 lock 文件: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     # Gate 1a: Bidirectional edges
     if args.check_graph or args.check_all:
-        results.append(check_bidirectional_edges(args.project))
+        results.append(
+            check_bidirectional_edges(args.project, graph_file=args.graph_file)
+        )
 
     # Gate 1b: Proposed new edge(s)
     if args.new_edge:
@@ -329,11 +509,18 @@ def main():
             if len(parts) != 2:
                 print("ERROR: --new-edge format: '源表→目标表'", file=sys.stderr)
                 sys.exit(1)
-            results.append(check_proposed_edge(args.project, parts[0].strip(), parts[1].strip()))
+            results.append(
+                check_proposed_edge(
+                    args.project,
+                    parts[0].strip(),
+                    parts[1].strip(),
+                    graph_file=args.graph_file,
+                )
+            )
 
     # Gate 1c: Full DAG cycle check
     if args.check_graph or args.check_all:
-        results.append(check_dag_cycles(args.project))
+        results.append(check_dag_cycles(args.project, graph_file=args.graph_file))
 
     if not results:
         parser.print_help()
@@ -347,8 +534,16 @@ def main():
         "overall_verdict": overall,
         "results": results
     }
+    if lock_digest is not None:
+        output["input_digest"] = lock_digest
 
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    serialized = json.dumps(output, ensure_ascii=False, indent=2)
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(serialized + "\n", encoding="utf-8")
+    else:
+        print(serialized)
 
     # Human summary to stderr
     failed = [r for r in results if r["verdict"] == "fail"]
@@ -360,6 +555,7 @@ def main():
                 print(f"    - {i['detail']}", file=sys.stderr)
     else:
         print(f"\n✅ 全部 {len(results)} 项检查通过", file=sys.stderr)
+    raise SystemExit(0 if overall == "pass" else 1)
 
 
 if __name__ == "__main__":

@@ -13,26 +13,44 @@ interface:
     - "brownfield"
   requires:
     - system-prompt.md
+    - references/theorems-and-protocols.md
+    - references/unified-design-spec.md
+    - references/tool-dispatch.md
+    - references/platform/node-capabilities.md
     - references/templates/field-association.md
     - references/templates/output-template.md
-    - 项目 project_context.json
-    - 项目 dependency_graph.json
-    - 项目 business-flow-manifest.json
+    - references/templates/execution-lock-schema.md
+    - agents/verification-orchestrator.md
+    - references/schemas/agent-verification-output.schema.json
+    - references/schemas/execution-lock-validation-schema.json
+  runtime_requires:
+    - project_context.json
+    - dependency_graph.json
+    - business-flow-manifest.json
+    - execution_lock.json
+  instructions: "built-in-skills/mode-b-brownfield.md"
   tools:
     - scripts/rebuild_graph.py --lifecycle
     - scripts/search.py
     - hap-bridge wf-nodes --raw
     - scripts/agent_prepare.py
+    - scripts/contract_compat.py
     - scripts/design_validator.py
+    - scripts/verify-platform.py
+    - scripts/validate-agent-output.py
+    - scripts/verification_merge.py
+    - scripts/lock_to_contract.py
   produces:
     - 影响面报告（哪些表/工作流受影响）
     - 增量变更方案（新增/修改的表和字段）
     - 工作流修改方案（节点增删改）
     - execution_lock.json
   verification:
+    schema: "references/schemas/agent-verification-output.schema.json"
     primary: "Agent 1 (逻辑: 5-section, 含时序校验)"
     secondary: "Agent 2 (平台: 节点类型+数据链路+拓扑)"
-    gate: "双门控 — 任一 Agent fail 则阻断输出"
+    command: "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design"
+    gate: "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
   pipeline: "4 steps: 上下文确认→影响面分析→增量构建→门控输出"
   blocking_steps:
     - "Step 0: 上下文不足时停 (Tier 1 + Tier 2)"

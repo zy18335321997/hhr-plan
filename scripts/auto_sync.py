@@ -166,13 +166,13 @@ def main():
         print(f"[sync] Dependency graphs are up to date.")
 
     if rebuilt_any:
-        # Regenerate global topology
+        # Regenerate project-scoped topology documents.
         topo_script = os.path.join(SKILL_DIR, "generate_topology.py")
         subprocess.run([sys.executable, topo_script, "--all"], check=False)
 
         print()
         print("[sync] ✓ Derived data synced.")
-        print("[sync] → search_index.db + dependency_graph.json + global-topology.md are fresh.")
+        print("[sync] → search_index.db + dependency_graph.json + topology-<project>.md are fresh.")
     else:
         print("[sync] ✓ Everything is up to date. No rebuild needed.")
 

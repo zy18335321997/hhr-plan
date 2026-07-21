@@ -1,0 +1,26 @@
+interface:
+  id: "agent_3_audit"
+  display_name: "审计完整性扫描"
+  short_description: "独立确认 Mode D 是否覆盖全部公理维度、数据范围和约束项。"
+  mode: "verification"
+  category: "audit"
+  triggers:
+    - "Agent 3"
+    - "审计完整性"
+    - "漏检扫描"
+  requires:
+    - agents/audit-scanner.md
+    - Mode D 审计报告
+    - 项目上下文输入
+    - system-prompt.md
+  instructions: "agents/audit-scanner.md"
+  tools: []
+  produces:
+    - agent_3_audit 统一校验 envelope
+  verification:
+    schema: "references/schemas/agent-verification-output.schema.json"
+    command: "python3 scripts/validate-agent-output.py --agent3 <output.json>"
+  pipeline: "读取独立上下文→完成五项累积扫描→输出统一 envelope"
+  references:
+    - agents/audit-scanner.md
+    - references/schemas/verification-failure-codes.md

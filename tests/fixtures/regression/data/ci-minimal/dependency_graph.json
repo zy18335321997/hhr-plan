@@ -1,0 +1,12 @@
+{
+  "nodes": {
+    "订单": {},
+    "客户": {},
+    "明细": {}
+  },
+  "edges": [
+    {"source": "订单", "target": "客户"},
+    {"from_sheet": "客户", "to_sheet": "订单"},
+    {"from_sheet": "订单", "to_sheet": "明细"}
+  ]
+}

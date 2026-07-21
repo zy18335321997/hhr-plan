@@ -7,7 +7,7 @@
 # [项目] · [模式] · [一句话结论]
 
 > 模式: Mode X | 日期: YYYY-MM-DD | 公理覆盖: [公理编号]
-> 门控: Agent1(逻辑) pass/fail | Agent2(平台) pass/fail
+> 门控: [Mode A/B: Agent1+Agent2 | Mode D: Agent3] pass/fail
 > 置信度: HIGH/MEDIUM/LOW
 
 ---
@@ -348,3 +348,50 @@ T4 ✉ 通知
 | Gate 4 字段 | pass/fail | [问题简述] |
 | Gate 5 平台 | pass/fail | [问题简述] |
 | Gate 6 推理 | pass/fail | [问题简述] |
+
+### Agent 裁决（Mode A/B）
+
+| Agent | 格式 | 语义 | Failure code | 证据 |
+|---|---|---|---|---|
+| Agent 1 逻辑 | pass/fail | pass/fail/not_evaluated | [code/null] | [输出文件] |
+| Agent 2 平台 | pass/fail | pass/fail/not_evaluated | [code/null] | [输出文件] |
+
+> `validate-agent-output.py` 返回 0 只表示格式完整；语义不是 `pass` 时仍必须阻断。
+
+---
+
+## 两阶段合约交接（Mode A/B 必填）
+
+| 产物 | 角色 | 是否可手改 | 状态 |
+|---|---|---:|---|
+| `design_spec.md` | 人类可读设计说明 | 是，但必须同步回 lock | [完成/阻断] |
+| `execution_lock.json` | 设计阶段唯一机器真源 | 是 | [校验结果] |
+| `execution_contracts/<safe-workflow-name>.json` | `lock_to_contract.py` 派生的单工作流执行输入 | 否 | [派生/阻断] |
+
+### 交接证据
+
+```text
+lock 结构校验: [pass/fail]
+项目字段与依赖校验: [pass/fail]
+平台机械校验: [pass/fail]
+Agent gates 合并: [pass/fail]
+lock_to_contract: [pass/fail，精确工作流名称]
+execution contract 校验: [pass/fail]
+平台原生只读校验: [skipped，当前无真实只读 API]
+用户确认后的平台写入验证: [pending/pass/fail]
+```
+
+任何一步失败时：
+
+- 保留 `execution_lock.json` 中的失败 Agent gates 和 `verification.fix_plan`。
+- 不生成、手改或交付一个“看起来可执行”的 `execution_contract.json`。
+- 不进入 `hap-flow-exec`。
+
+全部通过后仍须停等用户确认。用户确认后，才把已校验的
+`execution_contract.json` 交给 `hap-flow-exec`；不得把 lock 直接当执行输入。
+
+## Mode D 交接
+
+Mode D 使用 `mode-d-verification-state.json` 保存 Agent 3 gates，不把审计报告
+当 JSON 合并目标。审计本身不生成执行合约；用户批准修复后显式切换 Mode B，
+再走上述 lock → contract 流程。

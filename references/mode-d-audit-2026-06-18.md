@@ -1,5 +1,7 @@
 # hhr-plan Mode D 完整审计报告
 
+> 历史审计快照，不属于运行时加载链；当前扫描维度以
+> `references/unified-design-spec.md` 为准。
 > 日期: 2026-06-18 | 项目数: 6 | 方法: Mode D 五公理全覆盖扫描
 
 ## 审计结果

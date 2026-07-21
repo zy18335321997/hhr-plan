@@ -28,12 +28,29 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 3 ──→ Output
 
 ## 前置加载（全部在推理前加载）
 
-- `system-prompt.md` — 全部公理+定理
+- `system-prompt.md` — 元公理与设计公理
+- `references/theorems-and-protocols.md` — 定理与执行协议
+- `references/unified-design-spec.md` — 三层详细门控唯一真源
 - `references/tool-dispatch.md` — **🚨 强制**：工具调度卡（禁止用 grep/curl 替代）
-- `references/business-flow-manifest.json` — **必须先加载**，了解所有已有工作流的读/写关系
-- `references/project_context.json` — 表/字段/关联快照 + Hub表 + 命名规范
-- `references/aliases.json` — 客户用语→系统名称
+- `agents/verification-orchestrator.md` — Agent 调用、输出校验和裁决合并
+- `~/Documents/workflow-output/<项目名>/business-flow-manifest.json` — 已有工作流读/写关系
+- `~/Documents/workflow-output/<项目名>/project_context.json` — 表/字段/关联快照 + Hub表 + 命名规范
+- `~/Documents/workflow-output/<项目名>/aliases.json` — 客户用语→系统名称
 - `references/platform/node-capabilities.md` — 平台能力边界
+
+开始前必须设置并展示真实路径：
+
+```bash
+SKILL_DIR="${SKILL_DIR:-$HOME/.claude/skills/hhr-plan}"
+PROJECT_DIR="$HOME/Documents/workflow-output/<当前项目名>"
+CONTEXT_FILE="${PROJECT_DIR}/project_context.json"
+MANIFEST_FILE="${PROJECT_DIR}/business-flow-manifest.json"
+GRAPH_FILE="${PROJECT_DIR}/dependency_graph.json"
+LOCK_FILE="${PROJECT_DIR}/execution_lock.json"
+VALIDATOR_RESULT="/tmp/hhr_design_validation.json"
+```
+
+`<当前项目名>` 必须来自用户确认或项目 registry 的唯一匹配，不得写死示例项目。
 
 ---
 
@@ -110,9 +127,9 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 3 ──→ Output
 基于 Tier 1 的修改范围，预跑脚本：
 
 ```bash
-python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py <项目名> --lifecycle <表名>
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --writes-to -p <项目名>
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --reads-from -p <项目名>
+python3 "${SKILL_DIR}/scripts/rebuild_graph.py" "<当前项目名>" --lifecycle "<表名>"
+python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --writes-to -p "<当前项目名>"
+python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --reads-from -p "<当前项目名>"
 ```
 
 **必须输出**: 预估受影响工作流数 + 严重度预判（≤3 / 4-10 / >10）
@@ -122,7 +139,7 @@ python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --reads-from -p <
 如果 Tier 1 确认涉及修改已有工作流，**加载该工作流的完整 node_configs.json**：
 
 ```
-~/Documents/workflow-output/<项目名>/默认模块/<工作流名>/node_configs.json
+${PROJECT_DIR}/<模块>/<工作表>/工作流/<工作流名>/node_configs.json
 ```
 
 **必须输出**:
@@ -154,11 +171,11 @@ python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --reads-from -p <
 
 ```bash
 # 实体生命周期 → 谁创建/更新/读取这张表
-python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py 几建 --lifecycle 表名
+python3 "${SKILL_DIR}/scripts/rebuild_graph.py" "<当前项目名>" --lifecycle "<表名>"
 
 # 反向查 → 谁写这张表，谁读这张表
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --writes-to -p 几建
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --reads-from -p 几建
+python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --writes-to -p "<当前项目名>"
+python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --reads-from -p "<当前项目名>"
 ```
 
 不跑这步 = 不知道影响面 = 方案不可靠。
@@ -276,57 +293,87 @@ python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --reads-from -p 几
 
 ## Step 3: 门控 — Agent 并行校验 + Gate 自检
 
-🚧 **GATE**：Step 2 完成，增量方案已完整，`execution_lock.json` 已更新。
+🚧 **GATE**：Step 2 完成，增量方案已完整，`${LOCK_FILE}` 已更新。
 
 ### 3.1 脚本预检（自动）
 
-先跑自动验证，替代 Gate 4 + Gate 1 的人工 □：
+按 `references/unified-design-spec.md` 完成三层门控，并运行确定性验证：
 
 ```bash
-python3 ${SKILL_DIR}/scripts/design_validator.py <项目名> --lock-file execution_lock.json
-python3 ${SKILL_DIR}/scripts/design_validator.py <项目名> --check-graph
+python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-lock "${LOCK_FILE}"
+python3 "${SKILL_DIR}/scripts/design_validator.py" "<当前项目名>" \
+  --lock-file "${LOCK_FILE}" \
+  --context-file "${CONTEXT_FILE}" \
+  --graph-file "${GRAPH_FILE}" \
+  --check-graph \
+  --output "${VALIDATOR_RESULT}"
+python3 "${SKILL_DIR}/scripts/verify-platform.py" --lock-file "${LOCK_FILE}"
 ```
 
-不通过 → 修正 → 重跑。通过 → 继续。
+任一命令不通过 → Hard Stop，修正并重跑；不得降级为警告。
 
 ### 3.2 Agent 并行校验
 
-加载编排协议：
-```
-Read agents/verification-orchestrator.md
-```
+严格执行 `agents/verification-orchestrator.md`。先准备上下文包：
 
-准备上下文包：
 ```bash
-python3 ${SKILL_DIR}/scripts/agent_prepare.py execution_lock.json --output /tmp/hhr_agent_brief.json
+python3 "${SKILL_DIR}/scripts/agent_prepare.py" "${LOCK_FILE}" \
+  --validator-result "${VALIDATOR_RESULT}" \
+  --output "/tmp/hhr_agent_brief.json"
 ```
 
-**并行启动 Agent 1 + Agent 2（同 Mode A Step 7）**，收集 JSON 裁决。
+在同一轮并行启动 Agent 1/2，将原始 JSON 分别保存为
+`/tmp/hhr_agent1_output.json` 和 `/tmp/hhr_agent2_output.json`，然后执行：
+
+```bash
+python3 "${SKILL_DIR}/scripts/validate-agent-output.py" \
+  --agent1 "/tmp/hhr_agent1_output.json" \
+  --agent2 "/tmp/hhr_agent2_output.json"
+python3 "${SKILL_DIR}/scripts/verification_merge.py" \
+  --target "${LOCK_FILE}" \
+  --agent1 "/tmp/hhr_agent1_output.json" \
+  --agent2 "/tmp/hhr_agent2_output.json" \
+  --mode design
+```
+
+校验器退出 0 只表示格式完整，还必须确认 `semantic_verdict=pass`。合并器退出码
+1 或 2 都必须阻断；禁止手工把 lock 中的 gate 改为 pass。
 
 ### 3.3 Gate 2/3/5/6 人工补充自检
 
-Agent 校验覆盖了大部分 Gate，以下需人工确认：
-
-```
-□ Gate 2 逻辑:   Agent 1 逻辑校验 pass？时序标注 T0..Tn 完整？
-□ Gate 3 时序:   新节点读取的字段在插入位置确实已存在？
-□ Gate 5 平台:   Agent 2 平台校验 pass？
-□ Gate 6 推理:   方案无过度设计？隐藏假设已标注置信度？
-```
+不在本文件复制 Gate 内容。按 `references/unified-design-spec.md` 中 Mode B
+适用项逐项确认，并把证据写入设计文档。
 
 ### ⛔ BLOCKING — 任一 Gate 或 Agent 不通过则拦截修正
 
-全部通过 → 将 Agent 结果写入 execution_lock.json → 进入最终输出。
+全部通过后才允许进入合约转换：
+
+```bash
+SAFE_WORKFLOW_NAME="<仅含字母、数字、下划线和短横线的工作流安全文件名>"
+CONTRACT_FILE="${PROJECT_DIR}/execution_contracts/${SAFE_WORKFLOW_NAME}.json"
+python3 "${SKILL_DIR}/scripts/lock_to_contract.py" "${LOCK_FILE}" \
+  --workflow "<精确工作流名称>" \
+  --output "${CONTRACT_FILE}"
+python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-exec \
+  "${CONTRACT_FILE}"
+```
+
+转换失败属于 Hard Stop。多工作流 lock 必须逐个精确选择，并写入
+`execution_contracts/<safe-workflow-name>.json`，不得互相覆盖；不得猜工作流、ID、
+配置、依赖或发布顺序。
+
+平台写入验证只在用户确认后交给 `hap-flow-exec`；设计阶段只运行确定性
+contract/preflight，不运行任何发布或保存命令。
 
 ### ✅ Checkpoint
 
 ```markdown
 ## ✅ Step 3 完成
 - [x] design_validator.py: pass
-- [x] Agent 1 (逻辑校验): pass
-- [x] Agent 2 (平台校验): pass
-- [x] Gate 2/3/5/6 人工确认: pass
-- [x] 门控结果已写入 execution_lock.json
+- [x] Agent 1/2 输出格式与语义: pass
+- [x] 三层门控适用项: pass
+- [x] 门控结果已原子写入 execution_lock.json
+- [x] execution_contract.json 已由 lock 派生并验证
 - [ ] **Next**: 自动进入最终输出
 ```
 
@@ -346,21 +393,23 @@ Agent 校验覆盖了大部分 Gate，以下需人工确认：
 
 如果修改涉及已有工作流的表，**更新该表的 SOP**。
 
-### execution_lock.json（强制，与方案文档同时产出/更新）
+### 两阶段合约（强制）
 
-**新建项目**: 同 Mode A，设计文档定稿后同步生成。
 **修改已有项目**: 先加载已有的 `execution_lock.json`，修改后更新并重验：
 
 ```
 1. 加载已有 execution_lock.json（如项目未生成过，从 project_context.json 生成骨架:
-   python3 ${SKILL_DIR}/scripts/lock_manager.py init <项目名> --mode B --output execution_lock.json）
+   python3 "${SKILL_DIR}/scripts/lock_manager.py" init "<当前项目名>" --mode B \
+   --context-file "${CONTEXT_FILE}" \
+   --source-design "${PROJECT_DIR}/design_spec.md" \
+   --output "${LOCK_FILE}"）
 2. 将本次新增/修改的 sheets/workflows/associations 合并到 lock 文件
-3. 更新 gates 字段（Step 3 的门控结果）
-4. 运行验证:
-   python3 ${SKILL_DIR}/scripts/lock_manager.py validate <项目名> execution_lock.json
+3. 只允许 verification_merge.py 更新 Agent gates
+4. gates 通过后由 lock_to_contract.py 重新生成 execution_contract.json
 ```
 
-**合约文件是后续修改的唯一权威来源。** 下次修改本方案时，必须先加载 execution_lock.json 恢复设计状态。
+`execution_lock.json` 是后续修改的唯一机器真源；`execution_contract.json` 是可重建
+派生物，不得手工维护。输出后停等用户确认，确认前不得调用 `hap-flow-exec`。
 
 ### 禁止事项
 
@@ -378,5 +427,7 @@ Agent 校验覆盖了大部分 Gate，以下需人工确认：
 - [x] Step 2: 增量构建（表/字段 + 工作流修改 + 安全检查清单）
 - [x] Step 3: 门控（Gate 1-6 全部通过）
 - [x] execution_lock.json 已更新并验证通过
-- [x] 输出: 增量变更方案 + 影响面报告 + 更新 SOP + execution_lock.json
+- [x] execution_contract.json 已严格派生并验证通过
+- [x] 输出: 增量变更方案 + 影响面报告 + 更新 SOP + 两阶段合约
+- [x] 已停等用户确认，尚未执行
 ```

@@ -10,7 +10,8 @@ interface:
     - "翻译成客户语言"
     - "plain language"
   requires:
-    - 项目 aliases.json
+    - 项目别名输入
+  instructions: "built-in-skills/plain-language-check.md"
   tools: []
   produces:
     - 术语替换清单（系统术语→客户语言）

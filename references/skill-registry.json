@@ -1,8 +1,79 @@
 {
-  "generated_at": "2026-07-16T05:55:03.704209+00:00",
+  "generated_at": "2026-07-21T09:39:46.572532+00:00",
   "source": "skill_discovery.py",
-  "skill_dir": "/Users/mac/.claude/skills/hhr-plan",
+  "skill_dir": ".",
   "modes": {
+    "audit-scanner": {
+      "id": "agent_3_audit",
+      "display_name": "审计完整性扫描",
+      "short_description": "独立确认 Mode D 是否覆盖全部公理维度、数据范围和约束项。",
+      "mode": "verification",
+      "category": "audit",
+      "triggers": [
+        "Agent 3",
+        "审计完整性",
+        "漏检扫描"
+      ],
+      "requires": [
+        "agents/audit-scanner.md",
+        "Mode D 审计报告",
+        "项目上下文输入",
+        "system-prompt.md"
+      ],
+      "instructions": "agents/audit-scanner.md",
+      "tools": [],
+      "produces": [
+        "agent_3_audit 统一校验 envelope"
+      ],
+      "verification": {
+        "schema": "references/schemas/agent-verification-output.schema.json",
+        "command": "python3 scripts/validate-agent-output.py --agent3 <output.json>"
+      },
+      "pipeline": "读取独立上下文→完成五项累积扫描→输出统一 envelope",
+      "references": [
+        "agents/audit-scanner.md",
+        "references/schemas/verification-failure-codes.md"
+      ],
+      "_descriptor_path": "agents/descriptors/audit-scanner.yaml",
+      "skill_md": null,
+      "agent_md": "agents/audit-scanner.md"
+    },
+    "logic-verify": {
+      "id": "agent_1_logic",
+      "display_name": "设计逻辑校验",
+      "short_description": "独立检查设计方案的公理、时序、字段命名、逻辑与推理质量。",
+      "mode": "verification",
+      "category": "quality",
+      "triggers": [
+        "Agent 1",
+        "逻辑校验",
+        "设计门控"
+      ],
+      "requires": [
+        "agents/logic-verify.md",
+        "Agent brief input",
+        "Agent brief 中已通过且摘要匹配的 design_validator 证据",
+        "项目上下文输入",
+        "项目别名输入"
+      ],
+      "instructions": "agents/logic-verify.md",
+      "tools": [],
+      "produces": [
+        "agent_1_logic 统一校验 envelope"
+      ],
+      "verification": {
+        "schema": "references/schemas/agent-verification-output.schema.json",
+        "command": "python3 scripts/validate-agent-output.py --agent1 <output.json>"
+      },
+      "pipeline": "读取独立上下文→完成五部分累积检查→输出统一 envelope",
+      "references": [
+        "agents/logic-verify.md",
+        "references/schemas/verification-failure-codes.md"
+      ],
+      "_descriptor_path": "agents/descriptors/logic-verify.yaml",
+      "skill_md": null,
+      "agent_md": "agents/logic-verify.md"
+    },
     "mode-a-greenfield": {
       "display_name": "绿地设计",
       "short_description": "从零设计一个新的明道云应用。输入是业务需求，输出是完整的表结构+工作流+字段配置方案。",
@@ -18,15 +89,29 @@
       ],
       "requires": [
         "system-prompt.md",
+        "references/theorems-and-protocols.md",
+        "references/unified-design-spec.md",
+        "references/tool-dispatch.md",
+        "references/platform/node-capabilities.md",
         "references/templates/field-basic.md",
         "references/templates/field-association.md",
         "references/templates/field-subtable.md",
-        "references/templates/output-template.md"
+        "references/templates/output-template.md",
+        "references/templates/execution-lock-schema.md",
+        "agents/verification-orchestrator.md",
+        "references/schemas/agent-verification-output.schema.json",
+        "references/schemas/execution-lock-validation-schema.json"
       ],
+      "instructions": "built-in-skills/mode-a-greenfield.md",
       "tools": [
         "scripts/agent_prepare.py",
+        "scripts/contract_compat.py",
         "scripts/design_validator.py",
-        "scripts/lock_manager.py"
+        "scripts/lock_manager.py",
+        "scripts/verify-platform.py",
+        "scripts/validate-agent-output.py",
+        "scripts/verification_merge.py",
+        "scripts/lock_to_contract.py"
       ],
       "produces": [
         "工作表定义（名称、编号、Hub/Spoke 角色）",
@@ -36,9 +121,11 @@
         "execution_lock.json（设计方案合约）"
       ],
       "verification": {
+        "schema": "references/schemas/agent-verification-output.schema.json",
         "primary": "Agent 1 (逻辑: 5-section 公理+时序+命名+逻辑+信号)",
         "secondary": "Agent 2 (平台: 节点类型+子模式+上限+拓扑)",
-        "gate": "双门控 — 任一 Agent fail 则阻断输出"
+        "command": "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design",
+        "gate": "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
       },
       "pipeline": "7 steps: 平台边界→五问推导→Design Confirm→建表→建工作流→字段配置→门控输出",
       "blocking_steps": [
@@ -72,18 +159,35 @@
       ],
       "requires": [
         "system-prompt.md",
+        "references/theorems-and-protocols.md",
+        "references/unified-design-spec.md",
+        "references/tool-dispatch.md",
+        "references/platform/node-capabilities.md",
         "references/templates/field-association.md",
         "references/templates/output-template.md",
-        "项目 project_context.json",
-        "项目 dependency_graph.json",
-        "项目 business-flow-manifest.json"
+        "references/templates/execution-lock-schema.md",
+        "agents/verification-orchestrator.md",
+        "references/schemas/agent-verification-output.schema.json",
+        "references/schemas/execution-lock-validation-schema.json"
       ],
+      "runtime_requires": [
+        "project_context.json",
+        "dependency_graph.json",
+        "business-flow-manifest.json",
+        "execution_lock.json"
+      ],
+      "instructions": "built-in-skills/mode-b-brownfield.md",
       "tools": [
         "scripts/rebuild_graph.py --lifecycle",
         "scripts/search.py",
         "hap-bridge wf-nodes --raw",
         "scripts/agent_prepare.py",
-        "scripts/design_validator.py"
+        "scripts/contract_compat.py",
+        "scripts/design_validator.py",
+        "scripts/verify-platform.py",
+        "scripts/validate-agent-output.py",
+        "scripts/verification_merge.py",
+        "scripts/lock_to_contract.py"
       ],
       "produces": [
         "影响面报告（哪些表/工作流受影响）",
@@ -92,9 +196,11 @@
         "execution_lock.json"
       ],
       "verification": {
+        "schema": "references/schemas/agent-verification-output.schema.json",
         "primary": "Agent 1 (逻辑: 5-section, 含时序校验)",
         "secondary": "Agent 2 (平台: 节点类型+数据链路+拓扑)",
-        "gate": "双门控 — 任一 Agent fail 则阻断输出"
+        "command": "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design",
+        "gate": "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
       },
       "pipeline": "4 steps: 上下文确认→影响面分析→增量构建→门控输出",
       "blocking_steps": [
@@ -130,10 +236,11 @@
       ],
       "requires": [
         "system-prompt.md",
-        "项目 project_context.json",
-        "项目 business-flow-manifest.json",
-        "项目 _search_index.db（FTS5 索引）"
+        "项目上下文输入",
+        "业务流清单输入",
+        "项目搜索索引输入"
       ],
+      "instructions": "built-in-skills/mode-c-diagnose.md",
       "tools": [
         "scripts/search.py",
         "scripts/rebuild_graph.py --lifecycle",
@@ -183,17 +290,29 @@
       ],
       "requires": [
         "system-prompt.md",
-        "项目 project_context.json",
-        "项目 business-flow-manifest.json",
-        "项目 _node_data.json",
-        "项目 dependency_graph.json"
+        "references/unified-design-spec.md",
+        "references/tool-dispatch.md",
+        "agents/verification-orchestrator.md",
+        "agents/audit-scanner.md",
+        "references/schemas/agent-verification-output.schema.json"
       ],
+      "runtime_requires": [
+        "project_context.json",
+        "business-flow-manifest.json",
+        "_node_data.json",
+        "dependency_graph.json",
+        "audit-report.md",
+        "mode-d-verification-state.json"
+      ],
+      "instructions": "built-in-skills/mode-d-audit.md",
       "tools": [
         "scripts/auto_sync.py",
         "scripts/build_snapshot.py",
         "scripts/generate_node_data.py",
         "scripts/rebuild_graph.py",
-        "scripts/search.py"
+        "scripts/search.py",
+        "scripts/validate-agent-output.py",
+        "scripts/verification_merge.py"
       ],
       "produces": [
         "项目快照（project-snapshot.md）",
@@ -203,9 +322,10 @@
         "修复 SOP"
       ],
       "verification": {
-        "primary": "Agent 1 + Agent 2 (设计质量)",
-        "secondary": "Agent 3 (audit-scanner: 扫描完整性)",
-        "gate": "Agent 3 不通过时补扫; Agent 1/2 不通过时修正"
+        "schema": "references/schemas/agent-verification-output.schema.json",
+        "primary": "Agent 3 (audit-scanner: 扫描完整性)",
+        "command": "python3 scripts/validate-agent-output.py --agent3 <agent3.json> && python3 scripts/verification_merge.py --target <mode-d-verification-state.json> --agent3 <agent3.json> --mode audit",
+        "gate": "Agent 3 格式或语义失败均阻断；修复设计需显式路由 Mode B"
       },
       "pipeline": "3 steps: 扫描准备→五维度扫描→门控验证→输出",
       "blocking_steps": [
@@ -235,19 +355,20 @@
       ],
       "requires": [
         "references/patterns/README.md",
-        "references/patterns/button-trigger.md",
-        "references/patterns/event-trigger.md",
-        "references/patterns/single-sign.md",
-        "references/patterns/multi-level.md",
-        "references/patterns/dedup-check.md"
+        "references/patterns/trigger/button-trigger.md",
+        "references/patterns/trigger/event-trigger.md",
+        "references/patterns/approval/single-sign.md",
+        "references/patterns/approval/multi-level.md",
+        "references/patterns/data-validation/dedup-check.md"
       ],
-      "tools": "[]",
+      "instructions": "built-in-skills/pattern-select.md",
+      "tools": [],
       "produces": [
         "匹配的模式编号（A-E + 细分变体）",
         "适配建议（哪些参数需要调整）",
         "公理符合度标注"
       ],
-      "verification": "{}",
+      "verification": {},
       "pipeline": "3 steps: 需求特征提取→模式库匹配→适配建议",
       "references": [
         "built-in-skills/pattern-select.md",
@@ -270,14 +391,15 @@
         "plain language"
       ],
       "requires": [
-        "项目 aliases.json"
+        "项目别名输入"
       ],
-      "tools": "[]",
+      "instructions": "built-in-skills/plain-language-check.md",
+      "tools": [],
       "produces": [
         "术语替换清单（系统术语→客户语言）",
         "未被 aliases.json 覆盖的术语（需确认）"
       ],
-      "verification": "{}",
+      "verification": {},
       "pipeline": "2 steps: 扫描系统术语→对照 aliases.json 替换",
       "references": [
         "built-in-skills/plain-language-check.md"
@@ -285,6 +407,40 @@
       "_descriptor_path": "agents/descriptors/plain-language-check.yaml",
       "skill_md": "built-in-skills/plain-language-check.md",
       "agent_md": null
+    },
+    "platform-verify": {
+      "id": "agent_2_platform",
+      "display_name": "平台能力校验",
+      "short_description": "逐节点检查明道云能力、数据链路、批量限制和工作流拓扑。",
+      "mode": "verification",
+      "category": "quality",
+      "triggers": [
+        "Agent 2",
+        "平台校验",
+        "节点能力门控"
+      ],
+      "requires": [
+        "agents/platform-verify.md",
+        "Agent brief input",
+        "references/platform/node-capabilities.md"
+      ],
+      "instructions": "agents/platform-verify.md",
+      "tools": [],
+      "produces": [
+        "agent_2_platform 统一校验 envelope"
+      ],
+      "verification": {
+        "schema": "references/schemas/agent-verification-output.schema.json",
+        "command": "python3 scripts/validate-agent-output.py --agent2 <output.json>"
+      },
+      "pipeline": "读取独立上下文→逐节点累积检查→拓扑检查→输出统一 envelope",
+      "references": [
+        "agents/platform-verify.md",
+        "references/schemas/verification-failure-codes.md"
+      ],
+      "_descriptor_path": "agents/descriptors/platform-verify.yaml",
+      "skill_md": null,
+      "agent_md": "agents/platform-verify.md"
     },
     "requirement-triage": {
       "display_name": "需求分流",
@@ -302,7 +458,8 @@
       "requires": [
         "system-prompt.md"
       ],
-      "tools": "[]",
+      "instructions": "built-in-skills/requirement-triage.md",
+      "tools": [],
       "produces": [
         "可行性判断（可行/不可行/需先确认）",
         "模式路由（Mode A/B/C/D 或 think skill）",
@@ -326,8 +483,9 @@
   },
   "scripts": {
     "agent_prepare.py": {
-      "description": "Agent 上下文预处理器 — 从 execution_lock.json 生成 Agent 可读的简洁摘要。",
+      "description": "Agent 上下文预处理器 — 从 execution_lock.json 生成只读校验摘要。",
       "arguments": [
+        "--validator-result",
         "--output"
       ]
     },
@@ -364,7 +522,7 @@
       "arguments": []
     },
     "contract_compat.py": {
-      "description": "合约兼容性验证 — 验证 execution_contract.json 与 hap-flow-exec 的 schema 兼容性。",
+      "description": "Validate execution locks and derived hap-flow-exec contracts.",
       "arguments": [
         "--quiet",
         "--all-projects"
@@ -377,7 +535,11 @@
         "--check-graph",
         "--new-edge",
         "--check-all",
-        "--plan-file"
+        "--plan-file",
+        "--output",
+        "--lock-file",
+        "--context-file",
+        "--graph-file"
       ]
     },
     "diagnose.py": {
@@ -401,7 +563,7 @@
       "arguments": []
     },
     "generate_topology.py": {
-      "description": "Generate global-topology.md from dependency_graph.json.",
+      "description": "Generate references/topology-<project>.md from dependency_graph.json.",
       "arguments": []
     },
     "lock_manager.py": {
@@ -409,11 +571,22 @@
       "arguments": [
         "--mode",
         "--output",
+        "--context-file",
+        "--source-design",
+        "--context-file",
+        "--graph-file",
         "--update"
       ]
     },
+    "lock_to_contract.py": {
+      "description": "Strictly derive one hap-flow-exec contract from execution_lock.json.",
+      "arguments": [
+        "--workflow",
+        "--output"
+      ]
+    },
     "platform-validate.py": {
-      "description": "Gate 4: 平台原生校验 — 地面真相。",
+      "description": "平台只读校验占位入口。",
       "arguments": [
         "--workflow-id",
         "--lock-file"
@@ -429,7 +602,9 @@
         "--project",
         "--update-golden",
         "--quiet",
-        "--check-format"
+        "--check-format",
+        "--fixture-dir",
+        "--data-root"
       ]
     },
     "search.py": {
@@ -449,12 +624,26 @@
       ]
     },
     "validate-agent-output.py": {
-      "description": "后置闸门 — 验证 Agent 1/2/3 输出格式的完整性和一致性。",
+      "description": "验证 Agent 1/2/3 统一输出 envelope 的完整性。",
       "arguments": [
         "--agent1",
         "--agent2",
         "--agent3",
         "--input",
+        "--quiet",
+        "--selftest"
+      ]
+    },
+    "verification_merge.py": {
+      "description": "校验 Agent 输出并原子写入目标 JSON 的 gates。",
+      "arguments": [
+        "--target",
+        "--source",
+        "--agent1",
+        "--agent2",
+        "--agent3",
+        "--mode",
+        "--dry-run",
         "--quiet"
       ]
     },

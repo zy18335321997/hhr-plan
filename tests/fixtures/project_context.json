@@ -1,0 +1,20 @@
+{
+  "org_id": "org-001",
+  "app_id": "app-001",
+  "worksheets": {
+    "采购需求": {
+      "id": "ws-purchase",
+      "worksheet_id": "ws-purchase",
+      "module": "采购",
+      "fields": [
+        {
+          "id": "field-status",
+          "field_id": "field-status",
+          "name": "状态",
+          "type": "Text",
+          "required": true
+        }
+      ]
+    }
+  }
+}

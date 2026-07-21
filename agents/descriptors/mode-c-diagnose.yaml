@@ -17,9 +17,10 @@ interface:
     - "以前可以现在不行"
   requires:
     - system-prompt.md
-    - 项目 project_context.json
-    - 项目 business-flow-manifest.json
-    - 项目 _search_index.db（FTS5 索引）
+    - 项目上下文输入
+    - 业务流清单输入
+    - 项目搜索索引输入
+  instructions: "built-in-skills/mode-c-diagnose.md"
   tools:
     - scripts/search.py
     - scripts/rebuild_graph.py --lifecycle

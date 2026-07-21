@@ -12,6 +12,7 @@ interface:
     - "怎么做..."
   requires:
     - system-prompt.md
+  instructions: "built-in-skills/requirement-triage.md"
   tools: []
   produces:
     - 可行性判断（可行/不可行/需先确认）

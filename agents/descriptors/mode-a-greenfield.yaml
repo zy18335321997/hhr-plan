@@ -12,14 +12,28 @@ interface:
     - "greenfield"
   requires:
     - system-prompt.md
+    - references/theorems-and-protocols.md
+    - references/unified-design-spec.md
+    - references/tool-dispatch.md
+    - references/platform/node-capabilities.md
     - references/templates/field-basic.md
     - references/templates/field-association.md
     - references/templates/field-subtable.md
     - references/templates/output-template.md
+    - references/templates/execution-lock-schema.md
+    - agents/verification-orchestrator.md
+    - references/schemas/agent-verification-output.schema.json
+    - references/schemas/execution-lock-validation-schema.json
+  instructions: "built-in-skills/mode-a-greenfield.md"
   tools:
     - scripts/agent_prepare.py
+    - scripts/contract_compat.py
     - scripts/design_validator.py
     - scripts/lock_manager.py
+    - scripts/verify-platform.py
+    - scripts/validate-agent-output.py
+    - scripts/verification_merge.py
+    - scripts/lock_to_contract.py
   produces:
     - 工作表定义（名称、编号、Hub/Spoke 角色）
     - 字段配置（逐字段类型、关联、默认值）
@@ -27,9 +41,11 @@ interface:
     - SOP 操作文档
     - execution_lock.json（设计方案合约）
   verification:
+    schema: "references/schemas/agent-verification-output.schema.json"
     primary: "Agent 1 (逻辑: 5-section 公理+时序+命名+逻辑+信号)"
     secondary: "Agent 2 (平台: 节点类型+子模式+上限+拓扑)"
-    gate: "双门控 — 任一 Agent fail 则阻断输出"
+    command: "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design"
+    gate: "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
   pipeline: "7 steps: 平台边界→五问推导→Design Confirm→建表→建工作流→字段配置→门控输出"
   blocking_steps:
     - "Step 0: 平台不可行时停"

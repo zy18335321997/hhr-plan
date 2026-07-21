@@ -1,0 +1,16 @@
+{
+  "project": "ci-invalid",
+  "workflows": [
+    {
+      "name": "非法节点样例",
+      "nodes": [
+        {
+          "type_id": 999,
+          "action_id": null,
+          "name": "不存在的节点",
+          "config": {}
+        }
+      ]
+    }
+  ]
+}

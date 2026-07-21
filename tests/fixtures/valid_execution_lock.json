@@ -1,0 +1,140 @@
+{
+  "meta": {
+    "schema_version": "2.0",
+    "source_design": "design_spec.md",
+    "project": "测试项目",
+    "mode": "A",
+    "created": "2026-07-21",
+    "updated": "2026-07-21",
+    "axioms_covered": ["公理3"],
+    "confidence": "HIGH"
+  },
+  "target": {
+    "org_id": "org-001",
+    "app_id": "app-001"
+  },
+  "naming": {
+    "auto_number_prefix": "PO",
+    "workflow_verb_prefixes": ["提交"],
+    "worksheet_suffix_format": "子表（父表/操作类型）",
+    "bool_field_prefix": "是否",
+    "field_ordering": ["身份标识", "业务属性", "关联引用", "计算汇总"]
+  },
+  "sheets": [
+    {
+      "name": "采购需求",
+      "worksheet_id": "ws-purchase",
+      "module": "采购",
+      "is_hub": false,
+      "hub_reference": null,
+      "fields": [
+        {
+          "name": "状态",
+          "field_id": "field-status",
+          "type": "Text",
+          "default_value": "draft",
+          "required": true,
+          "unique": false,
+          "axiom_ref": "公理3",
+          "note": ""
+        }
+      ]
+    }
+  ],
+  "associations": [],
+  "workflows": [
+    {
+      "name": "提交采购需求",
+      "worksheet_id": "ws-purchase",
+      "trigger_sheet": "采购需求",
+      "trigger_type": "button",
+      "trigger": {
+        "type": "button",
+        "config": {
+          "name": "提交",
+          "worksheet_id": "ws-purchase",
+          "app_id": "app-001",
+          "enable_condition": "状态=draft"
+        }
+      },
+      "complexity": "Simple",
+      "data_signature": "Mutator",
+      "node_count": 1,
+      "has_approval": false,
+      "has_notification": false,
+      "pattern_match": null,
+      "axiom_ref": "公理3",
+      "node_chain": [
+        {
+          "index": "T1",
+          "alias": "update_status",
+          "node_type": "update_record",
+          "type_id": 6,
+          "action_id": 2,
+          "name": "更新状态",
+          "description": "把当前采购需求更新为已提交",
+          "target_sheet": "采购需求",
+          "writes_fields": ["状态"],
+          "reads_fields": ["状态"],
+          "config": {
+            "worksheet": "ws-purchase",
+            "target": {
+              "kind": "trigger",
+              "node": "trigger"
+            },
+            "rows": 1,
+            "fields": [
+              {
+                "fieldId": "field-status",
+                "value": "submitted"
+              }
+            ]
+          }
+        }
+      ],
+      "field_references": [
+        {
+          "field_id": "field-status",
+          "worksheet_id": "ws-purchase",
+          "field_name": "状态",
+          "type": "SingleSelect",
+          "expected_options": ["草稿", "已提交"]
+        }
+      ],
+      "dependencies": {
+        "subprocesses": []
+      },
+      "publish_order": ["main_workflow"],
+      "timing_constraint": "Tn 只读 T0..T{n-1} 已写入的字段"
+    }
+  ],
+  "gates": {
+    "gate_1_dependency": {"result": "pass", "issues": []},
+    "gate_2_logic": {"result": "pass", "issues": []},
+    "gate_3_timing": {"result": "pass", "issues": []},
+    "gate_4_fields": {"result": "pass", "issues": []},
+    "gate_5_platform": {"result": "pass", "issues": []},
+    "gate_6_reasoning": {"result": "pass", "issues": []},
+    "agent_1_logic": {"result": "pass"},
+    "agent_2_platform": {"result": "pass"}
+  },
+  "verification": {
+    "input_digest": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c",
+    "verification_agents": {
+      "schema_version": "1.0",
+      "completeness": "pass",
+      "semantic_verdict": "pass",
+      "agents": ["agent_1_logic", "agent_2_platform"],
+      "agent_input_digests": {
+        "agent_1_logic": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c",
+        "agent_2_platform": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c"
+      }
+    },
+    "fix_plan": {
+      "easy": [],
+      "medium": [],
+      "hard": [],
+      "total_issues": 0
+    }
+  }
+}

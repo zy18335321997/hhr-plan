@@ -18,11 +18,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run preflight
+      - name: Run deterministic preflight
         run: bash scripts/preflight.sh commit
 
-      - name: Run doctor (quiet)
-        run: bash scripts/doctor.sh --quiet || true
+      - name: Run or explicitly skip local environment doctor
+        shell: bash
+        run: |
+          if [[ -d "$HOME/Documents/workflow-output" ]]; then
+            bash scripts/doctor.sh --quiet
+          else
+            echo "::notice title=Doctor skipped::SKIP: $HOME/Documents/workflow-output is unavailable in GitHub Actions"
+          fi
 
   ledger:
     name: Coverage Ledger Validation
@@ -38,8 +44,8 @@ jobs:
       - name: Verify ledger format
         run: python3 scripts/verify-ledger.py
 
-      - name: Verify ledger (strict)
-        run: python3 scripts/verify-ledger.py --strict || true
+      - name: Verify ledger strict
+        run: python3 scripts/verify-ledger.py --strict
 
   python-syntax:
     name: Python Syntax Check
@@ -53,19 +59,34 @@ jobs:
           python-version: '3.10'
 
       - name: Check all Python scripts compile
+        shell: bash
         run: |
           errors=0
-          for f in scripts/*.py; do
-            if ! python3 -m py_compile "$f" 2>/dev/null; then
-              echo "SYNTAX ERROR: $f"
+          for file in scripts/*.py; do
+            if ! python3 -m py_compile "$file"; then
+              echo "SYNTAX ERROR: $file"
               errors=$((errors + 1))
             fi
           done
-          if [ $errors -gt 0 ]; then
+          if [[ $errors -gt 0 ]]; then
             echo "$errors script(s) have syntax errors"
             exit 1
           fi
           echo "All Python scripts pass syntax check"
+
+  unit-tests:
+    name: Standard Library Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run unittest discovery
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   platform-verify-selftest:
     name: Platform Verify Self-test
@@ -78,23 +99,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run verify-platform self-test
+      - name: Valid platform fixture must pass
+        run: python3 scripts/verify-platform.py --lock-file tests/fixtures/valid_execution_lock.json --quiet
+
+      - name: Invalid platform fixture must fail
+        shell: bash
         run: |
-          cat > /tmp/test_nodes.json << 'EOF'
-          {
-            "workflows": [{
-              "name": "test", "worksheet": "test",
-              "trigger": {"typeId": 8},
-              "nodes": [
-                {"typeId": 0, "actionId": null, "name": "trigger"},
-                {"typeId": 6, "actionId": 1, "name": "add", "config": {"rows": 50}},
-                {"typeId": 4, "actionId": null, "name": "deprecated"},
-                {"typeId": 99, "actionId": null, "name": "invalid"}
-              ]
-            }]
-          }
-          EOF
-          python3 scripts/verify-platform.py --nodes /tmp/test_nodes.json --quiet || exit 0
+          if python3 scripts/verify-platform.py --nodes tests/fixtures/invalid-platform-nodes.json --quiet; then
+            echo "ERROR: invalid platform fixture unexpectedly passed"
+            exit 1
+          fi
+          echo "Invalid platform fixture failed as expected"
 
   validate-output-selftest:
     name: Validate Output Self-test
@@ -107,19 +122,18 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run validate-agent-output self-test
-        run: |
-          # Create valid Agent 1 output
-          cat > /tmp/a1.json << 'EOF'
-          {"verdict":"pass","summary":{"total_checks":5,"passed":5,"failed":0,"uncertain":0},
-           "sections":{"axiom_compliance":{"result":"pass","violations":[]},
-           "timeline":{"result":"pass","violations":[]},
-           "naming_and_fields":{"result":"pass","violations":[]},
-           "logic":{"result":"pass","violations":[]},
-           "signals":{"result":"pass","warnings":[]}},
-           "issues":[],"fix_guide":{"easy":[],"medium":[],"hard":[]},"uncertain_items":[]}
-          EOF
-          python3 scripts/validate-agent-output.py --agent1 /tmp/a1.json --quiet || exit 1
+      - name: Run built-in Agent output self-test
+        run: python3 scripts/validate-agent-output.py --selftest
+
+      - name: Dry-run verification merge with repository fixtures
+        run: >-
+          python3 scripts/verification_merge.py
+          --target tests/fixtures/execution-lock.json
+          --agent1 tests/fixtures/agent1-pass.json
+          --agent2 tests/fixtures/agent2-pass.json
+          --mode design
+          --dry-run
+          --quiet
 
   skill-registry:
     name: Skill Registry Check
@@ -132,19 +146,16 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Validate skill registry consistency
-        run: python3 scripts/skill_discovery.py validate
+      - name: Validate skill registry and referenced paths
+        run: python3 scripts/skill_discovery.py validate --strict
 
-      - name: Ensure registry file exists and is valid JSON
-        run: |
-          if ! python3 -c "import json; json.load(open('references/skill-registry.json'))" 2>/dev/null; then
-            echo "ERROR: skill-registry.json is missing or invalid"
-            exit 1
-          fi
-          echo "skill-registry.json is valid JSON"
+      - name: Ensure registry file is valid JSON
+        run: >-
+          python3 -c
+          "import json; json.load(open('references/skill-registry.json', encoding='utf-8'))"
 
   contract-compat-check:
-    name: Contract Compatibility Check
+    name: Contract Pipeline Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,32 +165,39 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Cross-validate VALID_TYPE_IDS
+      - name: Cross-validate lock schema
         run: python3 scripts/contract_compat.py check-schema
 
-      - name: Validate contract with test data (valid)
-        run: |
-          cat > /tmp/valid_contract.json << 'CEOF'
-          {
-            "meta": {"schema_version": "1.0", "project": "test", "mode": "A", "created": "2026-07-16", "axioms_covered": ["公理1"], "confidence": "HIGH"},
-            "naming": {"auto_number_prefix": "T", "workflow_verb_prefixes": ["创建"], "worksheet_suffix_format": "子表", "bool_field_prefix": "是否", "field_ordering": ["身份标识"]},
-            "sheets": [{"name": "t", "module": "t", "is_hub": true, "fields": [{"name": "n", "type": "Text", "required": true, "unique": false}]}],
-            "associations": [],
-            "workflows": [{"name": "w", "trigger_sheet": "t", "trigger_type": "button", "node_chain": [{"index": "T0", "node_type": "触发", "type_id": 0, "description": "触发"}]}],
-            "gates": {"gate_1_dependency": {"result": "pass", "issues": []}, "gate_2_logic": {"result": "pass", "issues": []}, "gate_3_timing": {"result": "n/a", "issues": []}, "gate_4_fields": {"result": "pass", "issues": []}, "gate_5_platform": {"result": "pass", "issues": []}, "gate_6_reasoning": {"result": "pass", "issues": []}}
-          }
-          CEOF
-          python3 scripts/contract_compat.py validate /tmp/valid_contract.json --quiet || exit 1
+      - name: Validate repository lock fixture
+        run: >-
+          python3 scripts/contract_compat.py
+          validate-lock tests/fixtures/valid_execution_lock.json
+          --quiet
 
-      - name: Validate contract with test data (invalid)
+      - name: Convert lock fixture to execution contract
+        run: >-
+          python3 scripts/lock_to_contract.py
+          tests/fixtures/valid_execution_lock.json
+          --output "$RUNNER_TEMP/execution_contract.json"
+
+      - name: Validate generated execution contract
+        run: >-
+          python3 scripts/contract_compat.py
+          validate-exec "$RUNNER_TEMP/execution_contract.json"
+          --quiet
+
+      - name: Run or explicitly skip hap-flow-exec integration preflight
+        shell: bash
         run: |
-          cat > /tmp/invalid_contract.json << 'CEOF'
-          {"meta": {}, "workflows": [{"node_chain": [{"type_id": 999}]}]}
-          CEOF
-          python3 scripts/contract_compat.py validate /tmp/invalid_contract.json --quiet && exit 1 || exit 0
+          preflight_path="${HAP_FLOW_EXEC_PREFLIGHT:-../hap-flow-exec/scripts/preflight.py}"
+          if [[ -f "$preflight_path" ]]; then
+            python3 "$preflight_path" "$RUNNER_TEMP/execution_contract.json"
+          else
+            echo "::notice title=hap-flow-exec skipped::SKIP: sibling preflight not installed at $preflight_path"
+          fi
 
   regression-audit:
-    name: Regression Audit (Format Check)
+    name: Regression Fixture Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -189,5 +207,40 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Check golden snapshot format
+      - name: Check committed snapshot formats
         run: python3 scripts/regression_test.py --check-format
+
+      - name: Compare repository fixture to golden snapshot
+        run: >-
+          python3 scripts/regression_test.py
+          --project ci-minimal
+          --fixture-dir tests/fixtures/regression
+          --quiet
+
+  whitespace:
+    name: Commit Range Whitespace Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject whitespace errors in pushed or PR commits
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            range="${PR_BASE_SHA}...${HEAD_SHA}"
+          elif [[ -n "$PUSH_BEFORE_SHA" && ! "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
+            range="${PUSH_BEFORE_SHA}..${HEAD_SHA}"
+          elif git rev-parse "${HEAD_SHA}^" >/dev/null 2>&1; then
+            range="${HEAD_SHA}^..${HEAD_SHA}"
+          else
+            range="${HEAD_SHA}"
+          fi
+          echo "Checking whitespace in ${range}"
+          git diff --check "$range"

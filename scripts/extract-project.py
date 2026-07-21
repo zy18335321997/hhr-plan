@@ -10,22 +10,25 @@ Full project extraction — 替代 workflow-analyzer。
   - 更新 projects_registry.json  多项目注册表
 
 用法:
-  # 默认 MCP URL (几建/同技智能)
-  python3 extract-project.py <项目名>
-
-  # 指定 MCP URL (其他项目)
+  # 显式指定 MCP URL
   python3 extract-project.py <项目名> --mcp-url "https://xxx/mcp?key=yyy"
 
   # 或通过环境变量
   HAP_MCP_URL="https://xxx/mcp?key=yyy" python3 extract-project.py <项目名>
 
+  # 完全使用本地提取物，不需要 MCP URL
+  python3 extract-project.py <项目名> --skip-mcp \
+    --pids-file /path/to/pids.json \
+    --nodes-file /path/to/nodes.json \
+    --base-url "https://your-hap-host"
+
 前提:
-  - MCP 代理层始终可用 (HAP-Appkey + HAP-Sign)
+  - 非 --skip-mcp 模式必须通过 --mcp-url 或 HAP_MCP_URL 提供地址
   - 工作流节点提取需要 Chrome 登录 (auth.py → Chrome cookies)
   - 如 Chrome 未登录，跳过节点级分析，只生成基础数据
 """
 
-import json, os, sys, time, re, urllib.request, urllib.error, http.cookiejar
+import json, os, sys, time, re, urllib.request, urllib.error, urllib.parse, http.cookiejar
 from collections import defaultdict
 from datetime import datetime
 
@@ -42,24 +45,32 @@ sys.path.insert(0, HAP_BRIDGE)
 # ---------------------------------------------------------------------------
 # URL resolution
 # ---------------------------------------------------------------------------
-_DEFAULT_MCP_URL = (
-    "https://work.jijiansmart.com/mcp"
-    "?HAP-Appkey=4ba6553626bb83cc"
-    "&HAP-Sign=NDk2ZjdmYTQwNGYwZWY1ODIxN2RhZDNiMWU3YmI1ODlj"
-    "NzgzNmUwYzM2ZTJiZTZhYTQ4NTU4YWFlMTI4ZmM0Yw=="
-)
+def resolve_mcp_url(explicit: str | None) -> str | None:
+    """只接受调用参数或环境变量，不提供仓库内默认值。"""
+    return explicit or os.environ.get("HAP_MCP_URL")
 
 
-def resolve_mcp_url(explicit: str | None) -> str:
-    return explicit or os.environ.get("HAP_MCP_URL", _DEFAULT_MCP_URL)
+def derive_base_url(mcp_url: str | None) -> str | None:
+    if not mcp_url:
+        return None
+    parsed = urllib.parse.urlsplit(mcp_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if port:
+        host = f"{host}:{port}"
+    return f"{parsed.scheme}://{host}"
 
 
-def derive_base_url(mcp_url: str) -> str:
-    m = re.match(r"(https?://[^/]+)", mcp_url)
-    base = m.group(1) if m else "https://work.jijiansmart.com"
-    # Override: if project dir has a base_url.txt file, use that
-    # (handles cases where MCP proxy domain != app domain)
-    return base
+def display_mcp_origin(mcp_url: str | None) -> str:
+    """日志只显示 origin，避免泄漏查询参数中的凭证。"""
+    return derive_base_url(mcp_url) or "(not configured)"
 
 
 # ---------------------------------------------------------------------------
@@ -1163,7 +1174,7 @@ def build_aliases(ws_map: dict[str, dict]) -> dict:
 # ---------------------------------------------------------------------------
 def build_snapshot(project_name: str, ws_map: dict[str, dict],
                    wf_list: list[dict], manifest: dict,
-                   mcp_url: str, base_url: str) -> str:
+                   mcp_configured: bool, base_url: str) -> str:
     """Build project-snapshot.md Markdown."""
     ws_count = len(ws_map)
     wf_count = len(wf_list)
@@ -1231,7 +1242,7 @@ def build_snapshot(project_name: str, ws_map: dict[str, dict],
         "- `aliases.json` — 术语别名",
         "",
         "## 连接信息",
-        f"- MCP URL: {mcp_url[:60]}...",
+        f"- MCP: {'已通过运行时参数配置（地址未落盘）' if mcp_configured else '未使用'}",
         f"- Base URL: {base_url}",
         "",
         "## 使用提示",
@@ -1247,7 +1258,8 @@ def build_snapshot(project_name: str, ws_map: dict[str, dict],
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
-def update_registry(project_name: str, ws_count: int, wf_count: int, mcp_url: str = ""):
+def update_registry(project_name: str, ws_count: int, wf_count: int,
+                    mcp_configured: bool = False):
     registry_path = os.path.join(OUTPUT_BASE, "projects_registry.json")
     try:
         with open(registry_path) as f:
@@ -1264,8 +1276,13 @@ def update_registry(project_name: str, ws_count: int, wf_count: int, mcp_url: st
         "last_extracted": datetime.now().strftime("%Y-%m-%d"),
         "context_ready": True,
         "aliases_ready": False,
-        "mcp_url": mcp_url,
+        "mcp_configured": mcp_configured,
     }
+
+    # 旧版本曾把完整凭证化 URL 写入 registry；写回时统一清除。
+    for project in reg.get("projects", {}).values():
+        if isinstance(project, dict):
+            project.pop("mcp_url", None)
 
     with open(registry_path, "w") as f:
         json.dump(reg, f, ensure_ascii=False, indent=2)
@@ -1283,7 +1300,7 @@ def main():
     project_name = sys.argv[1]
 
     # Parse --mcp-url and --pids-file
-    mcp_url = _DEFAULT_MCP_URL
+    explicit_mcp_url = None
     full_extract = False
     pids_file = None
     skip_mcp = False
@@ -1291,7 +1308,7 @@ def main():
     nodes_file = None
     for i, arg in enumerate(sys.argv):
         if arg == "--mcp-url" and i + 1 < len(sys.argv):
-            mcp_url = sys.argv[i + 1]
+            explicit_mcp_url = sys.argv[i + 1]
         if arg == "--pids-file" and i + 1 < len(sys.argv):
             pids_file = sys.argv[i + 1]
         if arg == "--full":
@@ -1302,12 +1319,34 @@ def main():
             base_url_override = sys.argv[i + 1]
         if arg == "--nodes-file" and i + 1 < len(sys.argv):
             nodes_file = sys.argv[i + 1]
-    mcp_url = resolve_mcp_url(mcp_url if mcp_url != _DEFAULT_MCP_URL else None)
-    base_url = base_url_override or derive_base_url(mcp_url)
+    mcp_url = resolve_mcp_url(explicit_mcp_url)
+    if not skip_mcp and not mcp_url:
+        print(
+            "ERROR: 必须通过 --mcp-url 或 HAP_MCP_URL 提供 MCP 地址；"
+            "仓库不包含默认凭证。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    derived_base_url = derive_base_url(mcp_url)
+    if mcp_url and not derived_base_url:
+        print("ERROR: MCP URL 必须是有效的 http(s) URL。", file=sys.stderr)
+        sys.exit(2)
+    normalized_override = derive_base_url(base_url_override)
+    if base_url_override and not normalized_override:
+        print("ERROR: --base-url 必须是有效的 http(s) URL。", file=sys.stderr)
+        sys.exit(2)
+    base_url = normalized_override or derived_base_url
+    if pids_file and not nodes_file and not base_url:
+        print(
+            "ERROR: 使用 --pids-file 拉取节点时必须提供 --base-url，"
+            "或配置可推导 origin 的 MCP URL。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     print(f"=== 项目提取: {project_name} ===")
-    print(f"MCP URL: {mcp_url[:80]}...")
-    print(f"Base URL: {base_url}")
+    print(f"MCP origin: {display_mcp_origin(mcp_url)}")
+    print(f"Base URL: {base_url or '(not configured)'}")
     print()
 
     # Create output directory
@@ -1375,8 +1414,11 @@ def main():
     print("--- Phase 3: 工作流节点 ---")
     if nodes_file:
         node_data = extract_workflow_nodes_from_file(nodes_file, wf_list)
-    else:
+    elif wf_list and base_url:
         node_data = extract_workflow_nodes(base_url, wf_list, project_dir)
+    else:
+        node_data = {}
+        print("  [skip] 无节点文件，或缺少可用工作流/Base URL")
 
     # Phase 3b: Deep node configs (fieldValues for create/update nodes)
     if node_data and not nodes_file:
@@ -1417,13 +1459,20 @@ def main():
     print("  aliases.json")
 
     # 4. project-snapshot.md
-    snapshot = build_snapshot(project_name, ws_map, wf_list, manifest, mcp_url, base_url)
+    snapshot = build_snapshot(
+        project_name,
+        ws_map,
+        wf_list,
+        manifest,
+        bool(mcp_url),
+        base_url or "未配置",
+    )
     with open(os.path.join(project_dir, "project-snapshot.md"), "w") as f:
         f.write(snapshot)
     print("  project-snapshot.md")
 
     # 5. Registry
-    update_registry(project_name, len(ws_map), len(wf_list), mcp_url)
+    update_registry(project_name, len(ws_map), len(wf_list), bool(mcp_url))
 
     # 6. Auto-sync derived data (index + graph)
     auto_sync_script = os.path.join(os.path.dirname(__file__), "auto_sync.py")

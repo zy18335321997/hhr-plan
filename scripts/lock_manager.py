@@ -3,7 +3,7 @@
 
 Usage:
     # 从项目上下文 + 设计输出生成 lock 骨架
-    python3 lock_manager.py init 几建 --mode A --output path/to/execution_lock.json
+    python3 lock_manager.py init 几建 --mode A --source-design design.md --output path/to/execution_lock.json
 
     # 验证 lock 文件（表/字段存在性 + 关联环路）
     python3 lock_manager.py validate 几建 path/to/execution_lock.json
@@ -27,9 +27,19 @@ LOCK_SCHEMA_REF = SKILL_DIR.parent / "references" / "templates" / "execution-loc
 
 # ── Skeleton generation ──────────────────────────────────────────────
 
-def generate_skeleton(project: str, mode: str) -> dict:
+def generate_skeleton(
+    project: str,
+    mode: str,
+    context: dict | None = None,
+    context_file: str | None = None,
+    source_design: str = "",
+) -> dict:
     """Generate a minimal execution_lock.json skeleton from project context."""
-    ctx = _load_project_context(project)
+    ctx = (
+        context
+        if context is not None
+        else _load_project_context(project, context_file)
+    )
     sheets = ctx.get("worksheets", {})
     naming = ctx.get("naming", {}) if isinstance(ctx.get("naming"), dict) else {}
 
@@ -42,6 +52,7 @@ def generate_skeleton(project: str, mode: str) -> dict:
             if isinstance(f, dict):
                 fields.append({
                     "name": f.get("name", ""),
+                    "field_id": f.get("field_id", f.get("id", "")),
                     "type": f.get("type", ""),
                     "default_value": None,
                     "required": f.get("required", False),
@@ -55,6 +66,7 @@ def generate_skeleton(project: str, mode: str) -> dict:
 
         sheet_list.append({
             "name": name,
+            "worksheet_id": info.get("worksheet_id", info.get("id", "")),
             "module": info.get("module", ""),
             "is_hub": is_hub,
             "hub_reference": None,
@@ -64,12 +76,18 @@ def generate_skeleton(project: str, mode: str) -> dict:
 
     skeleton = {
         "meta": {
+            "schema_version": "2.0",
+            "source_design": source_design,
             "project": project,
             "mode": mode,
             "created": date.today().isoformat(),
             "updated": date.today().isoformat(),
             "axioms_covered": [],
             "confidence": "MEDIUM"
+        },
+        "target": {
+            "org_id": ctx.get("org_id", ""),
+            "app_id": ctx.get("app_id", "")
         },
         "naming": {
             "auto_number_prefix": naming.get("auto_number_prefixes", [""])[0] if naming.get("auto_number_prefixes") else "",
@@ -95,14 +113,35 @@ def generate_skeleton(project: str, mode: str) -> dict:
 
 # ── Validation ────────────────────────────────────────────────────────
 
-def validate_lock(project: str, lock_path: str) -> dict:
+def validate_lock(
+    project: str,
+    lock_path: str,
+    context: dict | None = None,
+    context_file: str | None = None,
+    graph: dict | None = None,
+    graph_file: str | None = None,
+) -> dict:
     """Validate a lock file against the project context."""
     lock = _load_lock(lock_path)
-    ctx = _load_project_context(project)
+    ctx = (
+        context
+        if context is not None
+        else _load_project_context(project, context_file)
+    )
     sheets = ctx.get("worksheets", {})
 
     issues = []
     stats = {"sheets_checked": 0, "fields_checked": 0, "workflows_checked": 0, "associations_checked": 0}
+
+    # Validate the lock contract before consulting platform context.
+    from contract_compat import validate_lock as validate_lock_contract
+    for violation in validate_lock_contract(lock):
+        issues.append({
+            "severity": "error",
+            "type": "lock_schema",
+            "path": violation.get("path", "$"),
+            "detail": violation["detail"],
+        })
 
     # Check sheet/field existence
     for s in lock.get("sheets", []):
@@ -145,18 +184,27 @@ def validate_lock(project: str, lock_path: str) -> dict:
 
     # Check associations
     from design_validator import load_dependency_graph, check_proposed_edge
-    graph = load_dependency_graph(project)
-    for assoc in lock.get("associations", []):
+    associations = lock.get("associations", [])
+    graph = (
+        graph
+        if graph is not None
+        else load_dependency_graph(
+            project,
+            graph_file,
+            required=bool(associations),
+        )
+    )
+    for assoc in associations:
         stats["associations_checked"] += 1
         frm = assoc.get("from_sheet", "")
         to = assoc.get("to_sheet", "")
         if frm and to:
-            result = check_proposed_edge(project, frm, to)
+            result = check_proposed_edge(project, frm, to, graph=graph)
             if result["verdict"] == "fail":
                 for i in result.get("issues", []):
                     issues.append({
                         "severity": "error",
-                        "type": "association_cycle",
+                        "type": i.get("type", "association_cycle"),
                         "from": frm,
                         "to": to,
                         "detail": i["detail"]
@@ -214,12 +262,19 @@ def merge_lock(lock_path: str, update_path: str) -> dict:
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
-def _load_project_context(project: str) -> dict:
-    path = DATA_DIR / project / "project_context.json"
+def _load_project_context(
+    project: str,
+    context_file: str | None = None,
+) -> dict:
+    path = (
+        Path(context_file)
+        if context_file
+        else DATA_DIR / project / "project_context.json"
+    )
     if not path.exists():
         print(f"ERROR: {path} not found", file=sys.stderr)
         sys.exit(1)
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -228,7 +283,7 @@ def _load_lock(path: str) -> dict:
     if not p.exists():
         print(f"ERROR: {path} not found", file=sys.stderr)
         sys.exit(1)
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -242,10 +297,18 @@ def main():
     init_p.add_argument("project")
     init_p.add_argument("--mode", default="A", help="Mode A 或 B")
     init_p.add_argument("--output", default=None, help="输出路径（默认 stdout 打印）")
+    init_p.add_argument("--context-file", help="project_context.json 路径")
+    init_p.add_argument(
+        "--source-design",
+        required=True,
+        help="设计文档路径（必填，写入 lock.meta.source_design）",
+    )
 
     validate_p = sub.add_parser("validate", help="验证锁文件")
     validate_p.add_argument("project")
     validate_p.add_argument("lock_path")
+    validate_p.add_argument("--context-file", help="project_context.json 路径")
+    validate_p.add_argument("--graph-file", help="dependency_graph.json 路径")
 
     merge_p = sub.add_parser("merge", help="合并更新到锁文件")
     merge_p.add_argument("lock_path")
@@ -254,18 +317,28 @@ def main():
     args = parser.parse_args()
 
     if args.command == "init":
-        skel = generate_skeleton(args.project, args.mode)
+        skel = generate_skeleton(
+            args.project,
+            args.mode,
+            context_file=args.context_file,
+            source_design=args.source_design,
+        )
         if args.output:
             out = Path(args.output)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(json.dumps(skel, ensure_ascii=False, indent=2))
             print(f"✅ Skeleton written to {args.output}", file=sys.stderr)
-            print(f"   {skel['meta']['sheets_count']} sheets with {sum(len(s.get('fields',[])) for s in skel['sheets'])} fields", file=sys.stderr)
+            print(f"   {len(skel['sheets'])} sheets with {sum(len(s.get('fields',[])) for s in skel['sheets'])} fields", file=sys.stderr)
         else:
             print(json.dumps(skel, ensure_ascii=False, indent=2))
 
     elif args.command == "validate":
-        result = validate_lock(args.project, args.lock_path)
+        result = validate_lock(
+            args.project,
+            args.lock_path,
+            context_file=args.context_file,
+            graph_file=args.graph_file,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result["verdict"] == "fail":
             errors = [i for i in result["issues"] if i["severity"] == "error"]
@@ -275,6 +348,7 @@ def main():
                 print(f"  [error] {i['detail']}", file=sys.stderr)
             for i in warnings[:10]:
                 print(f"  [warn]  {i['detail']}", file=sys.stderr)
+            raise SystemExit(1)
         else:
             print(f"\n✅ Validation PASSED ({result['stats']})", file=sys.stderr)
 

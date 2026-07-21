@@ -6,17 +6,19 @@
   python3 regression_test.py --project 几建 --update-golden
   python3 regression_test.py --project 几建 --quiet
   python3 regression_test.py --check-format    # CI: 只验证 snapshot 格式
+  python3 regression_test.py --project ci-minimal --fixture-dir tests/fixtures/regression
 
 设计:
   - 只比较确定性数据 (脚本提取的指标), 不比较 LLM 生成的 prose
   - 双向依赖比较用集合 (顺序无关)
+  - --fixture-dir 使用仓库内 data/ + snapshots/ 做真实 CI 比较
+  - --data-root 可注入项目数据根目录，避免依赖 ~/Documents
   - --update-golden 标志刷新快照
   - 公理评分标记为 comparison: "delegated" (需 LLM 判断)
 """
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,32 +26,35 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 REGRESSION_DIR = SKILL_DIR / "references" / "regression"
-WORKFLOW_OUTPUT = os.path.expanduser("~/Documents/workflow-output")
+WORKFLOW_OUTPUT = Path.home() / "Documents" / "workflow-output"
 
 SNAPSHOT_VERSION = "1.0"
 
 
-def extract_metrics(project_name: str) -> dict:
+def extract_metrics(
+    project_name: str,
+    data_root: Path | str = WORKFLOW_OUTPUT,
+) -> tuple[dict, list[str]]:
     """从项目数据文件中提取确定性指标。"""
-    proj_dir = os.path.join(WORKFLOW_OUTPUT, project_name)
-    ctx_file = os.path.join(proj_dir, "project_context.json")
-    dg_file = os.path.join(proj_dir, "dependency_graph.json")
-    nd_file = os.path.join(proj_dir, "_node_data.json")
+    proj_dir = Path(data_root) / project_name
+    ctx_file = proj_dir / "project_context.json"
+    dg_file = proj_dir / "dependency_graph.json"
+    nd_file = proj_dir / "_node_data.json"
 
     errors = []
     metrics = {}
 
     # worksheet count from project_context.json
-    if os.path.isfile(ctx_file):
-        with open(ctx_file) as f:
+    if ctx_file.is_file():
+        with open(ctx_file, encoding="utf-8") as f:
             ctx = json.load(f)
         metrics["worksheet_count"] = len(ctx.get("worksheets", {}))
     else:
         errors.append(f"project_context.json 缺失: {ctx_file}")
 
     # dependency graph metrics
-    if os.path.isfile(dg_file):
-        with open(dg_file) as f:
+    if dg_file.is_file():
+        with open(dg_file, encoding="utf-8") as f:
             dg = json.load(f)
         nodes = dg.get("nodes", {})
         edges = dg.get("edges", [])
@@ -60,8 +65,8 @@ def extract_metrics(project_name: str) -> dict:
         # bidirectional edge detection
         adj = {}
         for e in edges:
-            src = e.get("source", "")
-            tgt = e.get("target", "")
+            src = e.get("source") or e.get("from_sheet", "")
+            tgt = e.get("target") or e.get("to_sheet", "")
             if src and tgt:
                 adj.setdefault(src, set()).add(tgt)
         bidir = []
@@ -74,8 +79,8 @@ def extract_metrics(project_name: str) -> dict:
         errors.append(f"dependency_graph.json 缺失: {dg_file}")
 
     # workflow count from _node_data.json
-    if os.path.isfile(nd_file):
-        with open(nd_file) as f:
+    if nd_file.is_file():
+        with open(nd_file, encoding="utf-8") as f:
             nd = json.load(f)
         metrics["workflow_count"] = len(nd) if isinstance(nd, dict) else 0
     else:
@@ -100,15 +105,21 @@ def build_snapshot(project_name: str, metrics: dict, errors: list) -> dict:
     }
 
 
-def snapshot_path(project_name: str) -> Path:
-    return REGRESSION_DIR / f"{project_name}-snapshot.json"
+def snapshot_path(
+    project_name: str,
+    snapshot_dir: Path | str = REGRESSION_DIR,
+) -> Path:
+    return Path(snapshot_dir) / f"{project_name}-snapshot.json"
 
 
-def load_golden(project_name: str) -> dict:
-    sp = snapshot_path(project_name)
+def load_golden(
+    project_name: str,
+    snapshot_dir: Path | str = REGRESSION_DIR,
+) -> dict | None:
+    sp = snapshot_path(project_name, snapshot_dir)
     if not sp.exists():
         return None
-    with open(sp) as f:
+    with open(sp, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -232,16 +243,22 @@ def compare_metrics(current: dict, golden: dict) -> list:
 
 # ── 命令实现 ──
 
-def cmd_run(project_name: str, update_golden: bool = False, quiet: bool = False):
+def cmd_run(
+    project_name: str,
+    update_golden: bool = False,
+    quiet: bool = False,
+    data_root: Path | str = WORKFLOW_OUTPUT,
+    snapshot_dir: Path | str = REGRESSION_DIR,
+):
     """运行回归测试。"""
     # 提取当前指标
-    current_metrics, errors = extract_metrics(project_name)
+    current_metrics, errors = extract_metrics(project_name, data_root=data_root)
 
     if update_golden:
         snapshot = build_snapshot(project_name, current_metrics, errors)
-        sp = snapshot_path(project_name)
-        REGRESSION_DIR.mkdir(parents=True, exist_ok=True)
-        with open(sp, "w") as f:
+        sp = snapshot_path(project_name, snapshot_dir)
+        Path(snapshot_dir).mkdir(parents=True, exist_ok=True)
+        with open(sp, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
             f.write("\n")
         output = {
@@ -258,11 +275,14 @@ def cmd_run(project_name: str, update_golden: bool = False, quiet: bool = False)
         sys.exit(0)
 
     # 加载 golden
-    golden = load_golden(project_name)
+    golden = load_golden(project_name, snapshot_dir=snapshot_dir)
     if golden is None:
         print(json.dumps({
             "verdict": "fail",
-            "error": f"Golden snapshot 不存在: {snapshot_path(project_name)}",
+            "error": (
+                "Golden snapshot 不存在: "
+                f"{snapshot_path(project_name, snapshot_dir)}"
+            ),
             "fix": f"运行: python3 scripts/regression_test.py --project {project_name} --update-golden"
         }, ensure_ascii=False))
         sys.exit(1)
@@ -277,7 +297,7 @@ def cmd_run(project_name: str, update_golden: bool = False, quiet: bool = False)
         "verdict": verdict,
         "source": "regression_test.py",
         "project": project_name,
-        "snapshot_path": str(snapshot_path(project_name)),
+        "snapshot_path": str(snapshot_path(project_name, snapshot_dir)),
         "golden_generated_at": golden.get("generated_at"),
         "comparisons": diffs,
         "extraction_errors": errors,
@@ -295,18 +315,21 @@ def cmd_run(project_name: str, update_golden: bool = False, quiet: bool = False)
     sys.exit(0 if verdict == "pass" else 1)
 
 
-def cmd_check_format():
+def cmd_check_format(
+    snapshot_dir: Path | str = REGRESSION_DIR,
+):
     """CI 模式: 只验证 snapshot 格式和结构, 不做实际数据比较。"""
     violations = []
+    regression_dir = Path(snapshot_dir)
 
-    if not REGRESSION_DIR.exists():
+    if not regression_dir.exists():
         print(json.dumps({
             "verdict": "fail",
-            "error": f"Regression 目录不存在: {REGRESSION_DIR}"
+            "error": f"Regression 目录不存在: {regression_dir}"
         }, ensure_ascii=False))
         sys.exit(1)
 
-    snapshots = sorted(REGRESSION_DIR.glob("*-snapshot.json"))
+    snapshots = sorted(regression_dir.glob("*-snapshot.json"))
     if not snapshots:
         print(json.dumps({
             "verdict": "warn",
@@ -394,12 +417,34 @@ def main():
     parser.add_argument("--quiet", action="store_true", help="精简输出")
     parser.add_argument("--check-format", action="store_true",
                         help="CI 模式: 只验证 snapshot 格式, 不做数据比较")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--fixture-dir",
+        help="自包含 fixture 根目录（含 data/ 与 snapshots/）",
+    )
+    source.add_argument(
+        "--data-root",
+        help="项目数据根目录（含 <project>/ 子目录）",
+    )
     args = parser.parse_args()
 
+    data_root = Path(args.data_root) if args.data_root else WORKFLOW_OUTPUT
+    snapshot_dir = REGRESSION_DIR
+    if args.fixture_dir:
+        fixture_dir = Path(args.fixture_dir)
+        data_root = fixture_dir / "data"
+        snapshot_dir = fixture_dir / "snapshots"
+
     if args.check_format:
-        cmd_check_format()
+        cmd_check_format(snapshot_dir=snapshot_dir)
     elif args.project:
-        cmd_run(args.project, update_golden=args.update_golden, quiet=args.quiet)
+        cmd_run(
+            args.project,
+            update_golden=args.update_golden,
+            quiet=args.quiet,
+            data_root=data_root,
+            snapshot_dir=snapshot_dir,
+        )
     else:
         parser.print_help()
         sys.exit(2)

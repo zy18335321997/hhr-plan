@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "agent_id": "agent_2_platform",
+  "input_digest": "fb62c65519f17b886ee47b4488161f19ffec529af3d926ce5ad70a492f18ad2c",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {
+    "total_checks": 12,
+    "passed": 12,
+    "failed": 0,
+    "uncertain": 0
+  },
+  "issues": [],
+  "fix_guide": {
+    "easy": [],
+    "medium": [],
+    "hard": []
+  },
+  "uncertain_items": [],
+  "payload": {
+    "node_checks": [
+      {
+        "node_name": "触发",
+        "node_type": "trigger(typeId=0)",
+        "checks": {
+          "type_exists": {"result": "pass", "detail": "支持"},
+          "sub_mode": {"result": "pass", "detail": "适用"},
+          "data_link": {"result": "pass", "detail": "合法"},
+          "batch_limit": {"result": "pass", "detail": "未超限"},
+          "no_data_policy": {"result": "pass", "detail": "已配置"},
+          "fetch_mode": {"result": "pass", "detail": "直接获取"}
+        }
+      }
+    ],
+    "topology_checks": {
+      "total_nodes": {"result": "pass", "count": 1},
+      "nesting_depth": {"result": "pass", "depth": 0},
+      "concurrent_triggers": {"result": "pass", "conflicts": []},
+      "data_races": {"result": "pass", "conflicts": []},
+      "branch_coverage": {"result": "pass", "gaps": []},
+      "subprocess_cycles": {"result": "pass", "cycles": []}
+    }
+  }
+}

@@ -15,15 +15,16 @@
 ## 输入
 
 只读以下文件：
-1. `${WORKFLOW_NODES_GUIDE_PATH:-~/.claude/skills/zy-signflow/references/workflow-nodes-complete-guide.md}`（明道云官方节点完整指南）
+1. `${WORKFLOW_NODES_GUIDE_PATH:-${SKILL_DIR}/references/platform/node-capabilities.md}`（默认使用本仓库平台能力指南；仅在显式设置环境变量时覆盖）
 2. 本次设计方案中的工作流节点链（每个节点的类型、子模式、配置参数）
+3. Agent brief 顶层 `input_digest`；输出时必须原样复制，不得自行计算或改写
 
 ## 校验清单
 
 逐节点逐配置检查。每条结果必须是 pass / fail / uncertain。**即使前面节点有 fail，继续检查所有后续节点。**
 
 ### 1. 节点类型存在性
-- 方案中的每个节点类型是否在官方支持的 45 个节点中？（对照 workflow-nodes-complete-guide.md）
+- 方案中的每个节点类型是否在仓库真源登记的 39 个 `type_id` 中？（对照 `node-capabilities.md`）
 - 弃用节点检查：审批(旧) typeId=4 即将下线，必须用 typeId=26（发起审批流程）
 
 ### 2. 子模式正确性
@@ -90,62 +91,61 @@
 
 ## 输出格式
 
+只输出一个 JSON 对象，不要加 Markdown 代码围栏或说明文字。统一 envelope 的 schema 位于
+`references/schemas/agent-verification-output.schema.json`，你的固定 `agent_id` 是
+`agent_2_platform`。
+
 ```json
 {
-  "verdict": "pass" | "fail",
-  "summary": {
-    "total_nodes": 0,
-    "nodes_checked": 0,
-    "checks_passed": 0,
-    "checks_failed": 0,
-    "uncertain": 0
-  },
-  "node_checks": [
-    {
-      "node_name": "节点名",
-      "node_type": "类型+typeId",
-      "checks": {
-        "type_exists": {"result": "pass"|"fail", "detail": ""},
-        "sub_mode": {"result": "pass"|"fail", "detail": ""},
-        "data_link": {"result": "pass"|"fail", "detail": ""},
-        "batch_limit": {"result": "pass"|"fail", "detail": ""},
-        "no_data_policy": {"result": "pass"|"fail", "detail": ""},
-        "fetch_mode": {"result": "pass"|"fail", "detail": ""}
-      }
-    }
-  ],
-  "issues": [
-    {"severity": "high"|"medium"|"low", "node": "节点名", "description": "问题描述", "fix": "修正建议"}
-  ],
+  "schema_version": "1.0",
+  "agent_id": "agent_2_platform",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {"total_checks": 12, "passed": 12, "failed": 0, "uncertain": 0},
+  "issues": [],
   "fix_guide": {
-    "easy": [
-      {"node": "节点名", "issue": "问题摘要", "action": "改什么参数、改成什么值"}
-    ],
-    "medium": [
-      {"node": "节点名", "issue": "问题摘要", "action": "修改配置的步骤"}
-    ],
-    "hard": [
-      {"node": "节点名", "issue": "问题摘要", "action": "需要重构的方向"}
-    ]
+    "easy": [],
+    "medium": [],
+    "hard": []
   },
-  "topology_checks": {
-    "total_nodes": {"result": "pass"|"fail", "count": "N"},
-    "nesting_depth": {"result": "pass"|"fail", "depth": "N"},
-    "concurrent_triggers": {"result": "pass"|"warn", "conflicts": []},
-    "data_races": {"result": "pass"|"warn", "conflicts": []},
-    "branch_coverage": {"result": "pass"|"fail", "gaps": []},
-    "subprocess_cycles": {"result": "pass"|"fail", "cycles": []}
-  },
-  "uncertain_items": [
-    {"item": "描述", "reason": "为什么不确定"}
-  ]
+  "uncertain_items": [],
+  "payload": {
+    "node_checks": [
+      {
+        "node_name": "节点名",
+        "node_type": "类型+typeId",
+        "checks": {
+          "type_exists": {"result": "pass", "detail": ""},
+          "sub_mode": {"result": "pass", "detail": ""},
+          "data_link": {"result": "pass", "detail": ""},
+          "batch_limit": {"result": "pass", "detail": ""},
+          "no_data_policy": {"result": "pass", "detail": ""},
+          "fetch_mode": {"result": "pass", "detail": ""}
+        }
+      }
+    ],
+    "topology_checks": {
+      "total_nodes": {"result": "pass", "count": 1},
+      "nesting_depth": {"result": "pass", "depth": 0},
+      "concurrent_triggers": {"result": "pass", "conflicts": []},
+      "data_races": {"result": "pass", "conflicts": []},
+      "branch_coverage": {"result": "pass", "gaps": []},
+      "subprocess_cycles": {"result": "pass", "cycles": []}
+    }
+  }
 }
 ```
 
 **判定规则**:
-- `verdict = pass`: 所有节点所有检查项均为 pass
-- `verdict = fail`: 任一节点任一检查项为 fail，或存在 high severity issue
-- 如果方案的节点类型不在 workflow-nodes-complete-guide.md 中 → 标注 uncertain，不直接 fail
+- `verdict = pass`: 所有节点和拓扑检查均无 `fail`，`summary.failed=0`，
+  `failure_code=null`
+- `verdict = fail`: 任一检查为 `fail` 或存在 high severity issue；此时
+  `failure_code="A2_PLATFORM_FAILED"`、`summary.failed>0`、`issues` 非空
+- 如果方案的节点类型不在 `node-capabilities.md` 中 → 标注 uncertain，不直接 fail
+- `summary.total_checks` 必须严格等于 `passed + failed + uncertain`
+- `input_digest` 必须原样复制 Agent brief 中绑定本次 lock 的 64 位 SHA-256
+- `node_checks` 和 `topology_checks` 必须放在 `payload` 中，不得移动到 envelope 顶级
 
 **fix_guide 分组规则**:
 - `easy`: 参数值修改（子模式选错、获取模式切换）— 改一个配置字段即可
@@ -155,6 +155,6 @@
 ## 禁止
 
 - 不参考主会话讨论内容
-- 不猜测节点能力——必须查 workflow-nodes-complete-guide.md
+- 不猜测节点能力——必须查 `references/platform/node-capabilities.md`
 - 不确定时标注为 "uncertain" 而非 "pass"
 - 不跳过任何节点检查

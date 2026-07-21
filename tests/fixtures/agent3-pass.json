@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "agent_id": "agent_3_audit",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "uncertain": 0
+  },
+  "issues": [],
+  "fix_guide": {
+    "easy": [],
+    "medium": [],
+    "hard": []
+  },
+  "uncertain_items": [],
+  "payload": {
+    "missed_dimensions": [],
+    "uncovered_constraints": [],
+    "false_negatives": []
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "worksheets": {
+    "订单": {"worksheet_id": "ws-orders"},
+    "客户": {"worksheet_id": "ws-customers"},
+    "明细": {"worksheet_id": "ws-lines"}
+  }
+}

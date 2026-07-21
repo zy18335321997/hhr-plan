@@ -1,0 +1,27 @@
+interface:
+  id: "agent_1_logic"
+  display_name: "设计逻辑校验"
+  short_description: "独立检查设计方案的公理、时序、字段命名、逻辑与推理质量。"
+  mode: "verification"
+  category: "quality"
+  triggers:
+    - "Agent 1"
+    - "逻辑校验"
+    - "设计门控"
+  requires:
+    - agents/logic-verify.md
+    - Agent brief input
+    - Agent brief 中已通过且摘要匹配的 design_validator 证据
+    - 项目上下文输入
+    - 项目别名输入
+  instructions: "agents/logic-verify.md"
+  tools: []
+  produces:
+    - agent_1_logic 统一校验 envelope
+  verification:
+    schema: "references/schemas/agent-verification-output.schema.json"
+    command: "python3 scripts/validate-agent-output.py --agent1 <output.json>"
+  pipeline: "读取独立上下文→完成五部分累积检查→输出统一 envelope"
+  references:
+    - agents/logic-verify.md
+    - references/schemas/verification-failure-codes.md

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate global-topology.md from dependency_graph.json.
+Generate references/topology-<project>.md from dependency_graph.json.
 
 Usage:
     python3 scripts/generate_topology.py 几建
@@ -98,7 +98,7 @@ def pick_core_sheets(index, downstream):
 
 
 def generate_topology_md(project_name):
-    """Generate global-topology.md from dependency_graph.json."""
+    """Generate one project-scoped topology document."""
     proj_dir = os.path.join(BASE, project_name)
     graph_path = os.path.join(proj_dir, "dependency_graph.json")
 

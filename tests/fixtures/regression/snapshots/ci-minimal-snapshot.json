@@ -1,0 +1,22 @@
+{
+  "project": "ci-minimal",
+  "snapshot_version": "1.0",
+  "generated_at": "2026-07-21T00:00:00+00:00",
+  "source": "regression_test.py",
+  "metrics": {
+    "worksheet_count": 3,
+    "dependency_graph": {
+      "node_count": 3,
+      "edge_count": 3,
+      "bidirectional_edge_pairs": [
+        "客户↔订单"
+      ]
+    },
+    "workflow_count": 2
+  },
+  "axiom_scores": {
+    "comparison": "delegated",
+    "note": "公理评分需要 LLM 判断, 不做确定性比较"
+  },
+  "extraction_errors": []
+}

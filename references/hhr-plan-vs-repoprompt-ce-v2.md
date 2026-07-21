@@ -1,6 +1,7 @@
 # hhr-plan vs RepoPrompt CE — v2 深度对比
 
-> 2026-07-02 | 基于 RepoPrompt CE v1.0.22 源码分析 + hhr-plan v1.3.0 完整验证
+> 历史分析快照，不属于运行时加载链，也不代表当前能力或门控真源。
+> 2026-07-02 | 基于 RepoPrompt CE v1.0.22 源码与当时的 hhr-plan 实现。
 
 ## 一、定位差异
 

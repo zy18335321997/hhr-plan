@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "project": "测试项目",
+    "mode": "A"
+  },
+  "gates": {
+    "gate_1_dependency": {
+      "result": "pass",
+      "issues": []
+    }
+  }
+}

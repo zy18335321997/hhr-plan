@@ -25,9 +25,47 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 DESCRIPTORS_DIR = SKILL_DIR / "agents" / "descriptors"
 SCRIPTS_DIR = SKILL_DIR / "scripts"
 REGISTRY_PATH = SKILL_DIR / "references" / "skill-registry.json"
+REPO_PATH_PREFIXES = (
+    "agents/",
+    "built-in-skills/",
+    "references/",
+    "scripts/",
+)
+REPO_ROOT_FILES = {
+    "SKILL.md",
+    "system-prompt.md",
+    "README.md",
+}
+KNOWN_FILE_EXTENSIONS = {
+    ".json",
+    ".md",
+    ".db",
+    ".py",
+    ".sh",
+    ".tsv",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
 
 
 # ── YAML 描述符解析 (行级正则) ──
+
+def _parse_scalar(value: str):
+    """解析描述符使用的最小 YAML 标量集合。"""
+    value = value.strip()
+    if value == "[]":
+        return []
+    if value == "{}":
+        return {}
+    if value in {"true", "false"}:
+        return value == "true"
+    if value in {"null", "~"}:
+        return None
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1]
+    return value
+
 
 def parse_yaml_descriptor(filepath: Path) -> dict:
     """从单个 YAML 描述符文件中解析 interface 块。
@@ -55,7 +93,7 @@ def parse_yaml_descriptor(filepath: Path) -> dict:
             key, val = m.group(1), m.group(2)
             current_key = key
             current_is_dict = False
-            result[key] = val
+            result[key] = _parse_scalar(f'"{val}"')
             continue
 
         # ── 顶层标量 (无引号): "  key: value" 或 "  key:" ──
@@ -69,7 +107,7 @@ def parse_yaml_descriptor(filepath: Path) -> dict:
                 # 不在 result 中预设类型, 等第一个子元素
             else:
                 current_is_dict = False
-                result[key] = val
+                result[key] = _parse_scalar(val)
             continue
 
         # ── 嵌套 dict 键 (4-space indent, key: "value") ──
@@ -80,7 +118,7 @@ def parse_yaml_descriptor(filepath: Path) -> dict:
             if current_key:
                 if current_key not in result or not isinstance(result[current_key], dict):
                     result[current_key] = {}
-                result[current_key][nk] = nv
+                result[current_key][nk] = _parse_scalar(f'"{nv}"')
                 current_is_dict = True
             continue
 
@@ -90,7 +128,7 @@ def parse_yaml_descriptor(filepath: Path) -> dict:
             if current_key:
                 if current_key not in result or not isinstance(result[current_key], dict):
                     result[current_key] = {}
-                result[current_key][nk] = nv
+                result[current_key][nk] = _parse_scalar(nv)
                 current_is_dict = True
             continue
 
@@ -127,14 +165,29 @@ def scan_descriptors() -> dict:
         try:
             iface = parse_yaml_descriptor(yaml_file)
             iface["_descriptor_path"] = str(yaml_file.relative_to(SKILL_DIR))
-            # Derive skill_md path from references
+            # Explicit instructions is the source; references is legacy fallback.
             refs = iface.get("references", [])
-            skill_md = None
-            agent_md = None
+            instructions = iface.get("instructions")
+            skill_md = (
+                instructions
+                if isinstance(instructions, str)
+                and instructions.startswith("built-in-skills/")
+                else None
+            )
+            agent_md = (
+                instructions
+                if isinstance(instructions, str)
+                and instructions.startswith("agents/")
+                else None
+            )
             for ref in (refs if isinstance(refs, list) else []):
-                if ref.startswith("built-in-skills/"):
+                if skill_md is None and ref.startswith("built-in-skills/"):
                     skill_md = ref
-                if ref.startswith("agents/") and ref.endswith(".md"):
+                if (
+                    agent_md is None
+                    and ref.startswith("agents/")
+                    and ref.endswith(".md")
+                ):
                     agent_md = ref
             iface["skill_md"] = skill_md
             iface["agent_md"] = agent_md
@@ -187,10 +240,115 @@ def generate_registry() -> dict:
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "skill_discovery.py",
-        "skill_dir": str(SKILL_DIR),
+        "skill_dir": ".",
         "modes": scan_descriptors(),
         "scripts": scan_python_scripts(),
     }
+
+
+def _repo_path(value):
+    """返回需要按 skill 根目录校验的仓库相对路径。"""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if (
+        "/" in value
+        or value in REPO_ROOT_FILES
+        or Path(value).suffix.lower() in KNOWN_FILE_EXTENSIONS
+        or value.startswith(REPO_PATH_PREFIXES)
+    ):
+        return value
+    return None
+
+
+def _check_repo_path(mode_id, field, value, violations, required_path=False):
+    repo_path = _repo_path(value)
+    if repo_path is None:
+        if required_path:
+            violations.append({
+                "severity": "high",
+                "detail": (
+                    f"Mode '{mode_id}' field '{field}' must be a "
+                    f"skill-relative repository path: {value}"
+                ),
+            })
+        return
+    path = Path(repo_path)
+    if path.is_absolute():
+        violations.append({
+            "severity": "high",
+            "detail": (
+                f"Mode '{mode_id}' field '{field}' must be a safe "
+                f"skill-relative path: {value}"
+            ),
+        })
+        return
+    root = SKILL_DIR.resolve()
+    candidate = (root / path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        violations.append({
+            "severity": "high",
+            "detail": (
+                f"Mode '{mode_id}' field '{field}' escapes skill root: "
+                f"{value}"
+            ),
+        })
+        return
+    if not candidate.is_file():
+        violations.append({
+            "severity": "high",
+            "detail": (
+                f"Mode '{mode_id}' field '{field}' must reference a file: "
+                f"{value}"
+            ),
+        })
+
+
+def validate_descriptor_paths(mode_id, iface, violations):
+    """校验 requires / instructions / verification.schema 的仓库路径。"""
+    requires = iface.get("requires", [])
+    if not isinstance(requires, list):
+        violations.append({
+            "severity": "high",
+            "detail": f"Mode '{mode_id}' field 'requires' must be a list",
+        })
+    else:
+        for value in requires:
+            _check_repo_path(mode_id, "requires", value, violations)
+
+    instructions = iface.get("instructions")
+    if not isinstance(instructions, str) or not instructions.strip():
+        violations.append({
+            "severity": "high",
+            "detail": f"Mode '{mode_id}' field 'instructions' must be a path",
+        })
+    else:
+        _check_repo_path(
+            mode_id,
+            "instructions",
+            instructions,
+            violations,
+            required_path=True,
+        )
+
+    verification = iface.get("verification", {})
+    if not isinstance(verification, dict):
+        violations.append({
+            "severity": "high",
+            "detail": f"Mode '{mode_id}' field 'verification' must be an object",
+        })
+        return
+    schema = verification.get("schema")
+    if schema is not None:
+        _check_repo_path(
+            mode_id,
+            "verification.schema",
+            schema,
+            violations,
+            required_path=True,
+        )
 
 
 def cmd_generate(output_path: str = None, quiet: bool = False):
@@ -291,6 +449,7 @@ def cmd_validate(strict: bool = False):
 
     # Check referenced tools exist
     for mode_id, iface in fresh_modes.items():
+        validate_descriptor_paths(mode_id, iface, violations)
         tools = iface.get("tools", [])
         if isinstance(tools, list):
             for tool in tools:
@@ -298,12 +457,7 @@ def cmd_validate(strict: bool = False):
                 clean_tool = tool.split(" ")[0].split("（")[0].split("(")[0]
                 # Only check tools that are scripts/ paths
                 if clean_tool.startswith("scripts/"):
-                    tool_path = SKILL_DIR / clean_tool
-                    if not tool_path.exists():
-                        violations.append({
-                            "severity": "high",
-                            "detail": f"Mode '{mode_id}' references missing tool: {tool}"
-                        })
+                    _check_repo_path(mode_id, "tools", clean_tool, violations)
 
     # Check referenced built-in skills exist
     for mode_id, iface in fresh_modes.items():
@@ -322,7 +476,7 @@ def cmd_validate(strict: bool = False):
     output = {
         "verdict": verdict,
         "source": "skill_discovery.py validate",
-        "registry_path": str(REGISTRY_PATH),
+        "registry_path": str(REGISTRY_PATH.relative_to(SKILL_DIR)),
         "total_modes": len(fresh_modes),
         "total_scripts": len(fresh_scripts),
         "violations": violations,

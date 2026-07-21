@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-verification-output.schema.json",
+  "title": "hhr-plan Agent Verification Output",
+  "description": "Agent 1/2/3 共用输出 envelope。payload 由 agent_id 决定。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "agent_id",
+    "input_digest",
+    "verdict",
+    "failure_code",
+    "summary",
+    "issues",
+    "fix_guide",
+    "uncertain_items",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "agent_id": {
+      "enum": [
+        "agent_1_logic",
+        "agent_2_platform",
+        "agent_3_audit"
+      ]
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "校验输入的 SHA-256；设计模式绑定规范化 execution_lock，审计模式绑定审计报告原始字节。"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "failure_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        null,
+        "A1_LOGIC_FAILED",
+        "A2_PLATFORM_FAILED",
+        "A3_AUDIT_COVERAGE_INCOMPLETE"
+      ]
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    },
+    "fix_guide": {
+      "$ref": "#/$defs/fixGuide"
+    },
+    "uncertain_items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/uncertainItem"
+      }
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "agent_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_1_logic"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/agent1Payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agent_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_2_platform"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/agent2Payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agent_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_3_audit"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/agent3Payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "verdict"
+        ],
+        "properties": {
+          "verdict": {
+            "const": "pass"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agent_id",
+          "verdict"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_1_logic"
+          },
+          "verdict": {
+            "const": "fail"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {
+            "const": "A1_LOGIC_FAILED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agent_id",
+          "verdict"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_2_platform"
+          },
+          "verdict": {
+            "const": "fail"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {
+            "const": "A2_PLATFORM_FAILED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agent_id",
+          "verdict"
+        ],
+        "properties": {
+          "agent_id": {
+            "const": "agent_3_audit"
+          },
+          "verdict": {
+            "const": "fail"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {
+            "const": "A3_AUDIT_COVERAGE_INCOMPLETE"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_checks",
+        "passed",
+        "failed",
+        "uncertain"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "total_checks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uncertain": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "required": [
+        "severity",
+        "description",
+        "fix"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "warn"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fix": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string"
+        }
+      }
+    },
+    "fixItem": {
+      "type": "object",
+      "required": [
+        "issue",
+        "action"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "issue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string"
+        }
+      }
+    },
+    "fixGuide": {
+      "type": "object",
+      "required": [
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "easy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fixItem"
+          }
+        },
+        "medium": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fixItem"
+          }
+        },
+        "hard": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fixItem"
+          }
+        }
+      }
+    },
+    "uncertainItem": {
+      "type": "object",
+      "required": [
+        "item",
+        "reason"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "checkResult": {
+      "type": "object",
+      "required": [
+        "result"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "uncertain",
+            "n/a",
+            "warn"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "violations": {
+          "type": "array"
+        },
+        "warnings": {
+          "type": "array"
+        }
+      }
+    },
+    "agent1Payload": {
+      "type": "object",
+      "required": [
+        "sections"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sections": {
+          "type": "object",
+          "required": [
+            "axiom_compliance",
+            "timeline",
+            "naming_and_fields",
+            "logic",
+            "signals"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "axiom_compliance": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "timeline": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "naming_and_fields": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "logic": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "signals": {
+              "$ref": "#/$defs/checkResult"
+            }
+          }
+        }
+      }
+    },
+    "agent2Payload": {
+      "type": "object",
+      "required": [
+        "node_checks",
+        "topology_checks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "node_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "node_name",
+              "node_type",
+              "checks"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "node_name": {
+                "type": "string"
+              },
+              "node_type": {
+                "type": "string"
+              },
+              "checks": {
+                "type": "object",
+                "required": [
+                  "type_exists",
+                  "sub_mode",
+                  "data_link",
+                  "batch_limit",
+                  "no_data_policy",
+                  "fetch_mode"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "type_exists": {
+                    "$ref": "#/$defs/checkResult"
+                  },
+                  "sub_mode": {
+                    "$ref": "#/$defs/checkResult"
+                  },
+                  "data_link": {
+                    "$ref": "#/$defs/checkResult"
+                  },
+                  "batch_limit": {
+                    "$ref": "#/$defs/checkResult"
+                  },
+                  "no_data_policy": {
+                    "$ref": "#/$defs/checkResult"
+                  },
+                  "fetch_mode": {
+                    "$ref": "#/$defs/checkResult"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "topology_checks": {
+          "type": "object",
+          "required": [
+            "total_nodes",
+            "nesting_depth",
+            "concurrent_triggers",
+            "data_races",
+            "branch_coverage",
+            "subprocess_cycles"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "total_nodes": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "nesting_depth": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "concurrent_triggers": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "data_races": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "branch_coverage": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "subprocess_cycles": {
+              "$ref": "#/$defs/checkResult"
+            }
+          }
+        }
+      }
+    },
+    "agent3Payload": {
+      "type": "object",
+      "required": [
+        "missed_dimensions",
+        "uncovered_constraints",
+        "false_negatives"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "missed_dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "uncovered_constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "false_negatives": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

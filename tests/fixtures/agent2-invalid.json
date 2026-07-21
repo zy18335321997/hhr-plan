@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "agent_id": "agent_2_platform",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {
+    "total_checks": 11,
+    "passed": 11,
+    "failed": 0,
+    "uncertain": 0
+  },
+  "issues": [],
+  "fix_guide": {
+    "easy": [],
+    "medium": [],
+    "hard": []
+  },
+  "uncertain_items": [],
+  "payload": {
+    "node_checks": [
+      {
+        "node_name": "触发",
+        "node_type": "trigger(typeId=0)",
+        "checks": {
+          "type_exists": {"result": "pass"},
+          "sub_mode": {"result": "pass"},
+          "data_link": {"result": "pass"},
+          "batch_limit": {"result": "pass"},
+          "no_data_policy": {"result": "pass"}
+        }
+      }
+    ],
+    "topology_checks": {
+      "total_nodes": {"result": "pass"},
+      "nesting_depth": {"result": "pass"},
+      "concurrent_triggers": {"result": "pass"},
+      "data_races": {"result": "pass"},
+      "branch_coverage": {"result": "pass"},
+      "subprocess_cycles": {"result": "pass"}
+    }
+  }
+}

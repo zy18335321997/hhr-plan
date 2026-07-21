@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "agent_id": "agent_3_audit",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "fail",
+  "failure_code": "A3_AUDIT_COVERAGE_INCOMPLETE",
+  "summary": {
+    "total_checks": 5,
+    "passed": 4,
+    "failed": 1,
+    "uncertain": 0
+  },
+  "issues": [
+    {
+      "severity": "high",
+      "description": "存在漏检",
+      "fix": "补扫"
+    }
+  ],
+  "fix_guide": {
+    "easy": [],
+    "medium": [],
+    "hard": []
+  },
+  "uncertain_items": [],
+  "payload": {
+    "missing": ["公理5"],
+    "uncovered_constraints": [],
+    "false_negatives": []
+  }
+}

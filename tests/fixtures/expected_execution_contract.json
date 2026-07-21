@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "source_design": "design_spec.md",
+    "project": "测试项目",
+    "created": "2026-07-21",
+    "workflow_name": "提交采购需求",
+    "node_count": 1
+  },
+  "target": {
+    "org_id": "org-001",
+    "app_id": "app-001",
+    "worksheet_id": "ws-purchase"
+  },
+  "trigger": {
+    "type": "button",
+    "config": {
+      "name": "提交",
+      "worksheet_id": "ws-purchase",
+      "app_id": "app-001",
+      "enable_condition": "状态=draft"
+    }
+  },
+  "nodes": [
+    {
+      "seq": "T1",
+      "alias": "update_status",
+      "nodeType": "update_record",
+      "type_id": 6,
+      "name": "更新状态",
+      "config": {
+        "worksheet": "ws-purchase",
+        "target": {
+          "kind": "trigger",
+          "node": "trigger"
+        },
+        "rows": 1,
+        "fields": [
+          {
+            "fieldId": "field-status",
+            "value": "submitted"
+          }
+        ]
+      },
+      "action_id": 2
+    }
+  ],
+  "field_references": [
+    {
+      "fieldId": "field-status",
+      "worksheet": "ws-purchase",
+      "fieldName": "状态",
+      "type": "SingleSelect",
+      "expected_options": ["草稿", "已提交"]
+    }
+  ],
+  "dependencies": {
+    "subprocesses": []
+  },
+  "publish_order": ["main_workflow"]
+}

@@ -1,428 +1,154 @@
 ---
 name: hhr-plan
-description: 明道云 APaaS 设计引擎。当用户需要：解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、画泳道图、改工作流、工作表设计、数据模型设计时使用。覆盖绿地设计、棕地改造、诊断排查、健康审计四种工作模式。支持搜索索引秒定位 + 依赖图全景视角 + 实体生命周期提取。
+description: 明道云 APaaS 设计引擎。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用。
 user_invocable: true
-version: 1.3.0
+version: 2.0.0
 lifecycle: validated
 references:
   - system-prompt.md
-  - references/global-topology.md
-  - scripts/search.py
-  - scripts/build_search_index.py
-  - scripts/rebuild_graph.py
-  - scripts/extract-via-browser.py
-  - scripts/doctor.sh
-  - scripts/verify-platform.py
-  - scripts/validate-agent-output.py
-  - scripts/summarize-output.py
-  - scripts/verify-ledger.py
+  - references/tool-dispatch.md
+  - references/unified-design-spec.md
+  - references/theorems-and-protocols.md
+  - agents/verification-orchestrator.md
+  - references/templates/execution-lock-schema.md
+  - built-in-skills/
   - agents/descriptors/
-  - references/lessons-learned.md
-  - references/data-model-derivation.md
-  - references/workflow-design-derivation.md
-  - references/design-review-protocol.md
-  - references/templates/output-template.md
 ---
 
-# Mingdao APaaS 设计引擎 v5.0
-
-> 从「几建」项目（76工作表含工作流/321工作流/12业务域）反向蒸馏。
-> 2 条元公理 + 5 条设计公理 → 8 条定理 → 双门控验证 → 四种工作模式。
-> 生命周期: `validated` — 6 个项目 Mode D 审计完成，公理2/3=100%，公理1/4/5 领域敏感。
-
-> **统一命题**：给定任何 APaaS 场景，以五条公理为标尺，输出公理一致的设计或诊断。四种模式（绿地/棕地/诊断/审计）是同一把尺子的四种用法。
-
-## 引擎加载
-
-### 1. 始终加载
-`system-prompt.md` — 完整推理框架、约束表、平台限制清单、公理冲突处理规则。
-
-### 2. 识别模式并加载
-- Mode A (绿地设计): 从需求直接推导数据模型+工作流
-- Mode B (棕地改造): 在现有表上扩展，遵守公理4（单向依赖）
-- Mode C (诊断排查): 给定问题现象，追溯到根因+影响面
-- Mode D (健康审计): 五公理全覆盖扫描，输出评分卡+问题清单
-
-### 3. 按需加载附加技能
-按 `system-prompt.md` 中的 Mode→Skill 映射表加载。
-
-### 4. 两级加载：轻量查询 vs 全量分析
-
-在加载项目上下文前，先判断用户意图是否需要完整引擎：
-
-**轻量查询**（跳过 auto_sync，直接回答）：
-
-| 用户问 | 做法 | 耗时 |
-|--------|------|------|
-| "XX 工作流是干什么的" | `search.py --exact-name` → 读 node_configs 的前几个节点 → 一句话解释 | 秒回 |
-| "有哪些表" / "这个表有哪些字段" | `search.py --field-search` 或读 project_context.json 相关段落 | 秒回 |
-| "XX 和 YY 什么关系" | `rebuild_graph.py --lifecycle` 只看依赖边，不进节点细节 | 10秒内 |
-| "帮我搜一下 XX" | `search.py` → 列出匹配项 | 秒回 |
-
-满足以下**全部**条件才判为轻量查询：
-1. 用户只问了一个具体的事实性问题（不问"为什么"/"怎么改"）
-2. 不需要应用公理或门控
-3. 不需要评估影响面
-
-轻量查询**不加载**：FTS5 索引、依赖图、nodes.json 全量、公理体系。查完直接答，不自动推进下一步。
-
-**全量分析**（进入 Mode A/B/C/D，执行 auto_sync + 完整上下文）：用户需要设计、改造、排查根因或全面审计时触发。
-
-回答轻量查询后，如果用户追问"为什么"/"怎么改"/"帮我排查"，自动升级为全量分析。
-
-### 5. 按模式加载项目上下文（全量分析时）
-- Mode A/B/C: 加载目标项目的 `project_context.json` + `business-flow-manifest.json`
-- Mode D: 加载全部已提取项目的 manifest
-
-### 6. 项目上下文加载顺序
-
-分两层：**基础层**（所有模式共享，有构建依赖）→ **执行路径**（诊断/设计用相反顺序）。
-
-**启动时自动同步：**
-```bash
-python3 ~/.claude/skills/hhr-plan/scripts/auto_sync.py
-# 按 mtime 增量判定，只重建过期的索引和图，过期的跳过
-```
-
-**基础层：**
-```
-1-5 数据源（无顺序依赖）：
-  1. aliases.json → 术语映射
-  2. project_context.json → 工作表+字段（136表/1165字段）
-  3. business-flow-manifest.json → r/w链路（321工作流）
-  4. nodes.json → 节点配置（Browser提取）
-  5. lessons.json → 历史经验（可选）
-
-6-7 有构建依赖，必须按序：
-  6-9 的构建由 auto_sync.py 统一调度（按 mtime 增量，只重建过期的）：
-     python3 ~/.claude/skills/hhr-plan/scripts/auto_sync.py
-
-  6. _search_index.db（依赖 1-3）→ auto_sync 判断后调用 build_search_index.py
-  7. dependency_graph.json（依赖 2-3）→ auto_sync 判断后调用 rebuild_graph.py
-  8. 实体生命周期（依赖 7）→ 按需动态提取，始终最新
-  9. references/global-topology.md → 静态参照，auto_sync 重建后提示检查
-```
-
-**两名执行路径：**
-
-```
-诊断路径（从具体到全局）            设计路径（从全局到具体）
-Mode C / 排查 / 解释工作流         Mode A/B / 改造 / 新增
-
-① 步骤6 search 工作流名称         ① 步骤7 依赖图看全景
-② 步骤8 lifecycle 查创建者/消费者  ② 步骤8 lifecycle 看插入位置
-③ 步骤4 读 node_configs.json     ③ 步骤6 search 找相似模式
-④ 步骤7 依赖图评估下游影响面        ④ 步骤2+3 表+字段+工作流设计
-```
-
-**搜索速查：**
-```bash
-SRCH=~/.claude/skills/hhr-plan/scripts/search.py
-$SRCH "关键词" --type workflow -p 几建        # 模糊搜工作流
-$SRCH "工作流名" --exact-name -p 几建          # 精确名查找（用户告知名称时优先用）
-$SRCH "PID" --pid -p 几建                      # 直接PID查（用户给了PID直接用）
-$SRCH "表名" --writes-to -p 几建              # 反查谁写这张表
-$SRCH "表名" --reads-from -p 几建             # 反查谁读这张表
-$SRCH "字段名" --field-search -p 几建          # 找哪个表有这字段
-$SRCH "关键词" --type workflow --all-projects  # 跨项目搜
-$SRCH "关键词" --type workflow -p 几建 -f json # JSON输出（给agent）
-$SRCH "几建" --check-index                     # 检查索引完整性
-```
-
-**工作流定位优先级（从快到慢）：**
-1. 用户给了 PID → `--pid` 直查（绕过 FTS，最快）
-2. 用户给了工作流名 → `--exact-name`（绕过 FTS，次快）
-3. 用户给了关键词 → `--type workflow`（FTS 模糊搜索）
-4. 仍找不到 → `--reads-from`/`--writes-to` 反向定位
-
-### 7. 跨项目索引 + 项目初始化
-
-#### 路径 A：Browser 注入（默认，适用于所有项目）
-Chrome 登录明道云 → 打开目标应用 → F12 Console → 粘贴执行:
-```
-~/.claude/skills/hhr-plan/scripts/inject_all.js
-```
-产出两个文件自动下载: `{项目}_all_workflows.json` + `{项目}_field_map.json`，放入 `~/Documents/workflow-output/{项目名}/`，然后运行：
-```bash
-python3 scripts/extract-project.py {项目名} --skip-mcp \
-  --pids-file ~/Documents/workflow-output/{项目名}/pids.json \
-  --nodes-file ~/Documents/workflow-output/{项目名}/nodes.json \
-  --base-url "http://{项目域名}"
-```
-> 新脚本 `inject_all.js` 同时提取工作流节点 + 工作表字段定义（fieldId→fieldName 映射），
-> 解决旧脚本 `fieldName: null` 的问题。`generate_node_data.py` 也会自动加载 `_field_map.json` 补全字段名。
-
-#### 路径 B：MCP 代理（需要凭证）
-```bash
-python3 scripts/extract-project.py {项目名}
-```
-默认 MCP URL (几建/同技智能): `https://work.jijiansmart.com/mcp?HAP-Appkey=4ba6553626bb83cc&HAP-Sign=...`
-其他项目需通过 `--mcp-url` 或环境变量 `MCP_URL` 指定。
-
----
-
-## 三层校验框架
-
-> 整合 hhr-plan 6 门控（正确性）+ hap-app-builder 5 闭环（完整度）+ workflow_rules.md（可构建性）
-> 完整规范见 `references/unified-design-spec.md`
-
-设计方案或诊断结论准备输出前，**逐层自检**。任一层不通过 → 修正 → 从该层重来。三层全部通过才能输出。
-
-```
-输入: 设计方案
-  │
-  ▼
-第一层: 完整度闭环 (5 checks)  ← hap-app-builder 来源
-  "该设计的都设计了吗？有没有漏的？"
-  │
-  ▼
-第二层: 正确性门控 (6 gates)  ← hhr-plan 来源（增强）
-  "设计的东西对吗？会不会出错？"
-  │
-  ▼
-第三层: 可构建性 (7 rules)    ← workflow_rules.md 来源
-  "设计能翻译成 API 调用吗？会炸吗？"
-  │
-  ▼
-输出: 可执行方案
-```
-
----
-
-### 第一层：完整度闭环（Mode A/B 强制，Mode C/D 按需）
-
-```
-□ 闭环1 视图↔字段: 每个视图的 filter 选项值在字段 options 中存在？
-□ 闭环2 字段↔工作流: 时间敏感状态（逾期/超期）有自动标记工作流？工作流写的值在字段 options 中存在？
-□ 闭环3 按钮↔字段↔工作流: 按钮 enableCondition 引用的字段存在？triggerWorkflow 按钮有对应的工作流？禁止"审批通过/否决"按钮？
-□ 闭环4 页面↔视图: 仪表盘图表依赖的视图存在？导航分组覆盖全部内容？
-□ 闭环5 工作流数据闭环: 主表状态变更→关联表联动？审批/变更→通知到人？通知内容有足够上下文？
-```
-
----
-
-### 第二层：正确性门控
-
-#### Gate 1: 依赖图检查（Mode B/C 强制）
-
-```
-□ 查过 dependency_graph.json？
-  - 涉及多表改动 → 列出入向依赖（谁写这张表）+ 出向依赖（这张表写谁）
-  - 新增关联 → 是否产生 DAG 环路？（公理4）
-  - 修改字段 → 列出所有读写该字段的工作流
-□ 影响面评估完成？
-  - 受影响工作流 ≤3 → 列出名称+依赖类型
-  - 4-10 → 输出依赖关系图
-  - >10 → Hard Stop，等待用户决策
-```
-
-> 执行: `python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py 几建 --lifecycle 表名` 查实体生命周期。查 `dependency_graph.json` 的 `edges` 看上下游。
-
-#### Gate 2: 逻辑校验（整合 workflow 设计 8 规则）
-
-```
-□ 数据血缘（公理1）: 新增→回写父引用？主子表先主后子？查询用记录ID精确查？
-□ 关联表联动（rule 1）: 逐表扫描 worksheetContext？子表变化→主表统计？主表修改→子表同步？
-□ 前置查询（rule 2）: 更新其他表→前面有查询节点？定时工作流→先查询再操作？
-□ 人在回路（公理2）: 人工决策→按钮触发？审批=或签+退回仅发起节点？审批人为空→拥有者代理？allowReject=true？initiators 必填？
-□ 自文档化（公理3）: 编号=拼音前缀+日期+流水号？布尔字段=是否XX？nodeAlias=英文snake_case？
-□ 状态流转完整（rule 3）: 状态变更→同步写时间戳+操作人+关联表状态？
-□ 分支处理（rule 4）: get_single→直接判 rowid？get_multiple→先 rollup COUNT？分支覆盖所有可能值？
-□ 单向依赖（公理4）: 新关联不产生环路？Hub表集中属性？他表字段仅用于只读展示？
-□ 优雅降级（公理5）: 查询空→继续执行？子流程→逐条+中止继续？状态/日期/拥有者→默认值？
-```
-
-#### Gate 3: 时序校验（涉及工作流修改时强制执行）
-
-```
-□ 标注了完整时序 T0(触发)→T1→T2→...→Tn？
-□ 列出了每个节点的写入字段？
-□ Tk 读取的字段在 T0..T{k-1} 时是否已存在？
-  - 已知错误: T0 就查"流程状态""审批状态"→后面才写入→❌
-□ 审批结果两层分支:
-  - 内部: approve → branch(approval_result) → 写 executorid/opinionSummary
-  - 外部: approval_block → branch(PASS/OVERRULE) → 业务处理
-```
-
-#### Gate 4: 字段与实体存在性
-
-```
-□ 方案引用的每个字段名在工作表中存在？（查 project_context / worksheetContext）
-□ 方案引用的每个工作表名存在？
-□ 选项值在字段 options 中存在？（用中文 value，不是 UUID key）
-□ 新表名/工作流名/按钮名不与已有名称重复？
-□ 新编号前缀不与已有前缀冲突？
-```
-
-#### Gate 5: 平台可行性
-
-```
-□ 涉及的节点类型    → 明道云支持？
-□ 涉及的关联方式    → 支持？
-□ 子流程嵌套深度    → ≤2层？
-□ 总节点数          → ≤10 或已拆分子流程？
-□ 批量操作          → CRUD ≤100 / 子流程 ≤10000？
-□ 审批块            → typeId=26（非已弃用的 typeId=4）？
-□ 同一表多事件触发  → 有并发冲突风险？
-```
-
-#### Gate 6: 推理质量
-
-```
-□ 方案是否过度设计？能否删掉一半节点？
-□ 是否有隐藏假设未标注？（标注置信度 HIGH/MEDIUM/LOW）
-□ 方案所有决策是否可追溯到公理编号或设计规则？
-□ 是否存在"我推断应该有这个字段"但未验证的情况？
-```
-
----
-
-### 第三层：可构建性（Mode A/B 强制）
-
-> 来源: `hap-app-builder/build/steps/workflow_rules.md`。这些是"翻译成 API 调用时会炸"的物理约束。
-
-```
-□ BR1 ValueRef: field 带 node+真实 fieldId（严禁 alias）？systemField 不带 node？模板用 $system-fieldId$？
-□ BR2 Condition: left.node 始终必填？操作符只用 19 种合法枚举（eq/ne/gt/.../unchecked）？用 config.target 不用 sourceNode？
-□ BR3 作用域: 审批内部只用 approval_start？子流程内部只用 sub_trigger？自定义动作用物理 nodeId 不用 alias？
-□ BR4 节点引用: 不引用 update_record 的输出字段（无输出）？rollup/compute 用固定常量（number_fx_id/date_fx_id）？
-□ BR5 分支路径: prevNode 不指向分支节点本身？第一个子节点 prevNode=路径 alias？路径 alias 不用于 target.node？
-□ BR6 审批两层: 内部 branch(approval_result) 写执行人？外部 branch(PASS/OVERRULE) 驱动作业？
-□ BR7 发布顺序: 含子流程/审批块 → 先 publish 内部流程 → 最后 publish 主流程？
-```
-
----
-
-**任何一层未通过 → 修正后从该层重新开始。三层全部通过才能输出。**
-
-Mode D 审计输出前，额外查 `references/mode-d-audit-2026-06-18.md` 确认扫描维度完整。
-
----
-
-## 默认输出物（三项）
-
-引擎完成工作后，按 `references/templates/output-template.md` 统一格式输出。所有模式（A/B/C/D）共用同一套文档骨架：结论 → 方案概览(表格) → 上下文分析 → 详细配置(表格) → 门控结果。
-
-## Outcome Contract
-
-| 模式 | Done 条件 |
-|------|---------|
-| Mode A | 表+字段+工作流节点链完整，每条决策追溯公理，Gate 1-6 全部通过 |
-| Mode B | 上下文查询 + 依赖图检查 + 影响面评估（Gate 1 强制）+ 时序校验 + Gate 1-6 全部通过 |
-| Mode C | 术语映射 + 依赖图影响面 + 根因一句话(概率) + 证据链 + 排除假说；或 Hard Stop: 连续3假说不成立→输出排除清单+已知/未知清单 |
-| Mode D | 五维度扫描完成 + 评分卡 + 问题清单(按严重度排序) + Gate 6 通过 |
-
-### 诊断完成后的路由（Mode C）
-
-诊断出根因后，根据结论类型自动推荐下一步。每次只推荐一个最值得处理的方向，说清楚依据：
-
-| 根因类型 | 推荐 | 为什么 |
-|---------|------|--------|
-| 工作流节点逻辑错误（条件/分支/作用域/缺少去重） | 修改该工作流 | 根因明确，直接进入修改 |
-| 数据模型缺陷（缺少字段/关联方向反了/表职责不清） | 补充设计后再实现 | 先设计再动手，避免头痛医头 |
-| Rollup/Lookup/Formula 配置问题 | 告知用户去后台 UI 检查，给出具体字段名和检查项 | API 盲区，只能人工确认 |
-| 连续 3 个假说均不成立 | Hard Stop — 输出排除清单 + 已知/未知清单 | 不要继续猜 |
-| 影响面 >10 个工作流 | 标注影响范围，列出受影响的全部工作流，等用户决策 | 改动太大，不能自动推进 |
-| 根因明确但修复需要新建表或字段 | 进入设计，输出表结构+字段+工作流修改方案 | 从排查切换到设计 |
-
-用户已经明确下一步要做什么时，尊重用户选择。用户不确定时，根据上表推荐并说清楚依据。
-
-## Mode A/B → 工作流创建执行
-
-设计输出后，Mode A/B 自动进入执行交接流程：
-
-```
-hhr-plan 设计完成
-  ↓
-输出 design_spec.md + execution_contract.json
-  ↓
-⏸ 用户确认（必须停等）
-  ↓ 用户确认后
-加载 hap-flow-exec → 执行 Pipeline
-```
-
-**交接协议**：
-
-1. Mode A/B 设计通过三层门控后，输出两件物：
-   - `design_spec.md` — 给人看的设计文档
-   - `execution_contract.json` — 给 `hap-flow-exec` 的机器可读合约
-
-2. 输出后**必须停等用户确认**，不得直接进入执行。
-
-3. 用户确认后，加载 `hap-flow-exec` skill，以合约文件为输入执行 Step 0-7 Pipeline。
-
-> 合约格式见 `hap-flow-exec` 的 `references/execution-contract-schema.md`。
-
-## 生命周期演进路线
-
-| 状态 | 条件 | 当前 |
-|------|------|------|
-| `observed` | 1 个项目，公理待交叉验证 | ✅ 已通过（几建：136表/321流） |
-| `validating` | 2+ 项目已提取，公理交叉验证进行中 | ✅ 已通过 (6项目审计完成) |
-| `validated` | 2+ 项目交叉验证完成，≥80% 公理一致 | ← **当前位置** |
-| `locked` | 5+ 项目，公理稳定 | ⬜ |
-
-### 交叉验证矩阵
-
-> 上次更新: 2026-06-18 | 方法: Mode D 审计（Browser 提取升级至 node 级别 + 字段级公理检测）
-> 尚策已完成完整审计, 其余 Browser 项目待 node 数据补充后验证
-
-| 公理 | 几建(321流) | 尚策(490流) | 城市运营(324流) | 赫立-合同(41流) | 赫立-人事(26流) | 赫立-研发(25流) |
-|------|:--:|:--:|:--:|:--:|:--:|:--:|
-| 公理1 数据血缘 | ✅ | ✅ 38/132 | ✅ 29/95 | ⚠️ 0/9 | ✅ 4/11 | ⚠️ 3/9 |
-| 公理2 人在回路 | ✅ | ✅ 240/7 | ✅ 130/45 | ✅ 17/2 | ✅ 8/0 | ✅ 7/1 |
-| 公理3 自文档化 | ✅ | ✅ 96%中文 | ✅ 政务标准 | ✅ 合同体系 | ✅ 人事体系 | ✅ 研发流程 |
-| 公理4 单向依赖 | ✅ 0双向 | ❌ 9对跨域 | ⚠️ 1对(闭环) | ✅ 0双向 | ✅ 0双向 | ✅ 0双向 |
-| 公理5 优雅降级 | ✅ | ⚠️ 20/344 | ⚠️ 3/160 | ⚠️ 0/10 | ⚠️ 2/14 | ⚠️ 4/15 |
-| **通过** | **4/5** | **3/5** | **3/5** | **3/5** | **4/5** | **3/5** |
-
-**六个项目共识：**
-- 公理2(人在回路) 六项目全 ✅ — 最稳定的跨领域公理
-- 公理3(自文档化) 六项目全 ✅ — 明道云平台天然支持中文命名
-- 公理4(单向依赖) 五项目 ✅/⚠️, 仅尚策 ❌ — 制造供需循环是唯一硬伤
-- 公理1/5 Browser提取项目总体偏低, 与几建MCP提取差距明显 — 可能是nodes.json字段序列化深度不同
-
-> 验证方法：对每个项目运行 `hhr-plan` Mode D 审计 → 检查公理约束的 MUST/MUST NOT 在该项目中是否成立 → 标记 ✅/⚠️/❌。2+ 个项目 ≥80% ✅ 时升 `validated`。
-
-## Checkpoint / 接力机制
-
-上下文过长或诊断暂告一段落时，输出结构化存档。存档的核心目的是让后续对话可以直接接续，不需要用户重新描述。
+# hhr-plan 2.0.0
+
+明道云 APaaS 设计、诊断与审计入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
+
+## 1. 先分流：轻量查询或全量任务
+
+### 轻量查询
+
+仅当以下条件全部成立时使用：
+
+1. 用户只问一个可直接查证的事实，例如工作流用途、表字段、工作流清单或两张表的关系。
+2. 不需要解释原因、提出改造、评估影响面或执行审计。
+3. 不需要应用公理和门控。
+
+加载 `references/tool-dispatch.md`，只读取命中对象所需的最小本地数据。回答后停止，不运行 `auto_sync.py`，不加载完整节点集，也不自动升级任务。
+
+用户追问“为什么”“怎么改”“帮我排查”时，升级为全量任务。
+
+### 全量任务
+
+设计、改造、诊断根因或健康审计均属于全量任务。先确定 Mode，再按第 3 节加载。
+
+## 2. 显式 Mode 路由
+
+| 意图 | Mode | 指令真源 |
+|---|---|---|
+| 从零设计新应用、新模块或新数据模型 | A 绿地设计 | `built-in-skills/mode-a-greenfield.md` |
+| 修改现有表、字段、工作流或审批链 | B 棕地改造 | `built-in-skills/mode-b-brownfield.md` |
+| 解释异常、定位根因、追踪错误数据 | C 诊断排查 | `built-in-skills/mode-c-diagnose.md` |
+| 全项目合规扫描、健康检查或评分 | D 健康审计 | `built-in-skills/mode-d-audit.md` |
+
+边界规则：
+
+- 用户只问“值不值得做/有没有必要”，先路由到价值判断能力，不直接进入 Mode A。
+- 诊断确认需要修改时，从 Mode C 显式切换到 Mode B，不在诊断流程内直接写设计。
+- Mode D 发现问题后先交付审计；需要修复时显式切换到 Mode B。
+- 意图或项目身份不清会改变结果时，只问一个最小澄清问题，不静默猜 Mode。
+
+## 3. 按需加载
+
+### 所有全量 Mode
+
+1. `system-prompt.md`：元公理、设计公理、冲突优先级和诚实边界。
+2. 对应 Mode 指令文件：步骤、阻断点、产出。
+3. `references/tool-dispatch.md`：仅在需要查本地项目数据或调用平台时加载。
+
+### Mode A/B
+
+额外加载：
+
+- `references/theorems-and-protocols.md`：定理与执行协议。
+- `references/unified-design-spec.md`：完整度、正确性、可构建性详细门控的唯一真源。
+- `agents/verification-orchestrator.md`：独立 Agent 调用、格式校验与裁决合并。
+- `references/templates/execution-lock-schema.md`：设计锁和执行合约交接。
+
+字段、工作流、平台能力和行业参考只在对应步骤命中时加载，不预加载整个 `references/`。
+
+### Mode C/D
+
+只加载目标项目和当前问题所需的数据。Mode D 使用 `references/unified-design-spec.md` 作为扫描维度真源；历史审计报告不能替代当前规范。
+
+## 4. 真源与规范命名
+
+| 事项 | 唯一真源 |
+|---|---|
+| 元公理与五条设计公理 | `system-prompt.md` |
+| 八条定理与执行协议 | `references/theorems-and-protocols.md` |
+| 三层详细门控 | `references/unified-design-spec.md` |
+| 工具选择、命令和本地优先级 | `references/tool-dispatch.md` |
+| Mode 步骤与阻断规则 | 对应 `built-in-skills/mode-*.md` |
+| Agent 输出格式与合并 | Schema + `agents/verification-orchestrator.md` |
+| 设计阶段机器真源 | `execution_lock.json` |
+| 执行阶段派生输入 | `execution_contract.json`，只能由 `lock_to_contract.py` 生成 |
+| 可发现接口 | `agents/descriptors/*.yaml`；`references/skill-registry.json` 是生成物 |
+
+项目数据统一使用以下名称：
+
+- `project_context.json`：表、字段、关联和命名上下文。
+- `business-flow-manifest.json`：工作流读写清单。
+- `nodes.json`：浏览器或内部 API 提取的原始节点。
+- `_node_configs.json`：`extract-project.py` 生成的字段级节点详情。
+- `_node_data.json`：由 `generate_node_data.py` 从现有提取物生成的标准化节点索引，供搜索和依赖图消费。
+- `node_configs.json`：旧提取器或单工作流缓存格式；只通过 `wf_fetch.py` 按 PID 读取，不把它与上述全项目文件混称。
+
+## 5. Outcome Contract
+
+| Mode | 完成条件 |
+|---|---|
+| A | 用户确认设计锚点；设计与 `execution_lock.json` 一致；三层门控和 Agent 1/2 通过；成功派生并校验执行合约，或因缺少精确 ID 明确 Hard Stop。 |
+| B | 真实项目路径已确认；影响面和时序完整；修改后的 lock 通过确定性检查及 Agent 1/2；成功派生并校验执行合约，或明确阻断。 |
+| C | 给出可复核的根因、证据链、影响面和排除项；连续假说失败时输出已知/未知清单并停止。 |
+| D | 当前项目数据范围明确；扫描维度完整；Agent 3 输出通过格式和语义校验；报告按严重度排序。 |
+
+“脚本退出 0”不自动等于设计通过：`validate-agent-output.py` 的退出 0 只表示格式完整，还必须检查 `semantic_verdict`。
+
+## 6. Checkpoint
+
+任务暂停或上下文过长时，输出最小可接续存档：
 
 ```yaml
----
-project: {项目名}
-timestamp: {ISO 8601 带时区，如 2026-07-21T15:30:00+08:00}
-mode: {Mode A/B/C/D}
-status: {in-progress | resolved | abandoned}
-
-# 以下字段按模式选填
-root_cause: {Mode C: 根因一句话，含置信度 HIGH/MEDIUM/LOW}
-workflow_pid: {Mode C: 定位到的目标工作流 PID}
-affected_workflows: {Mode B/C: 受影响的工作流列表}
-excluded_hypotheses: {Mode C: 已排除的假说及排除理由}
-design_scope: {Mode A/B: 设计涉及的表和字段}
-
-next_action: {mode_a | mode_b | mode_c | mode_d | hard_stop | user_confirm}
-next_target: {下一步的具体对象，如 "直接新增采购需求 工作流, 节点 发布任务"}
----
-
-## 当前任务
-{简述+进度}
-
-## 已决策事项
-{不需要重新确认的结论}
-
-## 关键文件路径
-{上下文/工作流/依赖图路径}
-
-## 下一步
-{1-2句话，与 frontmatter 中的 next_action + next_target 一致}
+project: <项目名>
+project_path: <绝对路径>
+mode: A|B|C|D
+status: in-progress|resolved|blocked
+confirmed: []
+artifacts:
+  project_context: <路径或 null>
+  execution_lock: <路径或 null>
+  execution_contract: <路径或 null>
+excluded_hypotheses: []
+next_action: <下一步动作>
+blocker: <阻断原因或 null>
 ```
 
-**关键字段说明**：
+不得在 checkpoint 中复制密钥、MCP 查询参数或平台 Cookie。
 
-- `next_action` + `next_target`：让后续 Agent 可以直接跳到下一步，不需要重新判断模式
-- `excluded_hypotheses`：避免后续对话重复排查已排除的假说
-- `status: resolved` 的问题下次回来直接跳过，`status: in-progress` 的继续追
+## 7. 两阶段合约交接
 
-输出存档后告诉用户：「下次说"接着上次"或输入 `/hhr-plan 继续`，我会直接从这里开始。」
+Mode A/B 的固定交接顺序：
+
+1. 设计写入 `execution_lock.json`；它是唯一可编辑机器真源。
+2. 运行 lock、项目字段/依赖和平台机械校验。
+3. 按 `agents/verification-orchestrator.md` 调用 Agent 1/2，运行 `validate-agent-output.py`，再由 `verification_merge.py` 原子写入 Agent gates 与顶层 `verification`。
+4. 任一格式或语义失败都必须阻断；修正后重验，禁止手工把 gate 改为 pass。
+5. gates 通过后运行 `lock_to_contract.py`，从 lock 逐个派生
+   `execution_contracts/<safe-workflow-name>.json`。
+6. 运行 `contract_compat.py validate-exec`。转换器缺少任何精确 ID、配置、依赖或发布顺序时 Hard Stop，不得猜值。
+7. 向用户展示设计与门控结果并停等确认。只有用户确认后，才把已校验的执行合约交给 `hap-flow-exec`。
+
+`design_spec.md` 是人类可读说明，不能覆盖 lock；`execution_contract.json` 是可重新生成的执行输入，不能手改。
+
+## 8. 安全边界
+
+- 项目提取必须显式提供 `--mcp-url` 或设置 `HAP_MCP_URL`；仓库不提供默认 MCP URL。
+- 日志、快照、checkpoint、registry 和设计文档不得记录凭证化 URL。
+- Mode B 的影响面超过规范阈值、项目路径不明确、节点数据与 PID 不匹配、Agent 失败、合约转换失败时均停止。
+- 详细门控内容只引用 `references/unified-design-spec.md`，本入口不复制门控清单。

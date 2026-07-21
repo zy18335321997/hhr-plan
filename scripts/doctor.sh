@@ -65,6 +65,7 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW_OUTPUT="$HOME/Documents/workflow-output"
 HAP_BRIDGE="$HOME/.claude/mcp-servers/hap-bridge/cli.py"
 REGISTRY="$WORKFLOW_OUTPUT/projects_registry.json"
+LOCAL_DATA_AVAILABLE=0
 
 phase "Layer 0: 基础设施"
 
@@ -94,14 +95,15 @@ fi
 if [[ -f "$HAP_BRIDGE" ]]; then
     ok "hap-bridge CLI ($HAP_BRIDGE)"
 else
-    err "hap-bridge CLI 缺失: $HAP_BRIDGE — wf_fetch.py / batch 脚本需要"
+    warn "hap-bridge CLI 缺失: $HAP_BRIDGE — SKIP 远程抓取能力检查"
 fi
 
 # 0.4 workflow-output 目录
 if [[ -d "$WORKFLOW_OUTPUT" ]]; then
+    LOCAL_DATA_AVAILABLE=1
     ok "workflow-output 目录 ($WORKFLOW_OUTPUT)"
 else
-    err "workflow-output 目录缺失: $WORKFLOW_OUTPUT"
+    warn "workflow-output 目录缺失: $WORKFLOW_OUTPUT — SKIP Layer 1-4 本地项目数据检查"
 fi
 
 # 0.5 git
@@ -124,7 +126,10 @@ fi
 
 phase "Layer 1: 项目注册表"
 
-if [[ -f "$REGISTRY" ]]; then
+if [[ $LOCAL_DATA_AVAILABLE -eq 0 ]]; then
+    warn "SKIP 项目注册表检查：本地 workflow-output 不存在"
+    CONTEXT_READY_PROJECTS=()
+elif [[ -f "$REGISTRY" ]]; then
     ok "projects_registry.json 存在"
 
     if python3 -c "import json; json.load(open('$REGISTRY'))" 2>/dev/null; then
@@ -166,7 +171,12 @@ else
 fi
 
 # 确定要检查的项目
-if [[ -n "$target_project" ]]; then
+if [[ $LOCAL_DATA_AVAILABLE -eq 0 ]]; then
+    CHECK_PROJECTS=()
+    if [[ -n "$target_project" ]]; then
+        warn "SKIP 项目 [$target_project]：本地 workflow-output 不存在"
+    fi
+elif [[ -n "$target_project" ]]; then
     CHECK_PROJECTS=("$target_project")
     log "  聚焦项目: $target_project"
 else
@@ -183,7 +193,8 @@ fi
 
 phase "Layer 2: 项目核心文件"
 
-for project in "${CHECK_PROJECTS[@]}"; do
+if [[ ${#CHECK_PROJECTS[@]} -gt 0 ]]; then
+  for project in "${CHECK_PROJECTS[@]}"; do
     PROJECT_DIR="$WORKFLOW_OUTPUT/$project"
     log ""
     log "  [$project]"
@@ -246,7 +257,8 @@ print(total)
     else
         warn "[$project] aliases.json 缺失 — 术语映射不可用，诊断时客户术语无法自动解析"
     fi
-done
+  done
+fi
 
 # ─────────────────────────────────────────────
 # Layer 3: 派生数据新鲜度 (per-project)
@@ -254,7 +266,8 @@ done
 
 phase "Layer 3: 派生数据新鲜度"
 
-for project in "${CHECK_PROJECTS[@]}"; do
+if [[ ${#CHECK_PROJECTS[@]} -gt 0 ]]; then
+  for project in "${CHECK_PROJECTS[@]}"; do
     PROJECT_DIR="$WORKFLOW_OUTPUT/$project"
     [[ -d "$PROJECT_DIR" ]] || continue
     log ""
@@ -327,11 +340,14 @@ assert isinstance(nodes, (dict,list)) and isinstance(edges, list)
     else
         warn "[$project] project-snapshot.md 缺失 — 运行 build_snapshot.py"
     fi
-done
+  done
+fi
 
 # 3.4 FTS5 搜索索引 (全局, 跨项目)
 SEARCH_DB="$WORKFLOW_OUTPUT/_search_index.db"
-if [[ -f "$SEARCH_DB" ]]; then
+if [[ $LOCAL_DATA_AVAILABLE -eq 0 ]]; then
+    warn "SKIP FTS5 搜索索引检查：本地 workflow-output 不存在"
+elif [[ -f "$SEARCH_DB" ]]; then
     if python3 -c "
 import sqlite3
 conn = sqlite3.connect('$SEARCH_DB')
@@ -363,7 +379,8 @@ fi
 
 phase "Layer 4: 数据一致性"
 
-for project in "${CHECK_PROJECTS[@]}"; do
+if [[ ${#CHECK_PROJECTS[@]} -gt 0 ]]; then
+  for project in "${CHECK_PROJECTS[@]}"; do
     PROJECT_DIR="$WORKFLOW_OUTPUT/$project"
     [[ -d "$PROJECT_DIR" ]] || continue
 
@@ -455,7 +472,8 @@ if bidir:
     elif [[ "$bidirectional" == FOUND:* ]]; then
         err "[$project] 依赖图存在双向边: ${bidirectional#FOUND:}— 检查 rebuild_graph.py 输出"
     fi
-done
+  done
+fi
 
 # ─────────────────────────────────────────────
 # Layer 5: 技能系统完整性
@@ -475,16 +493,16 @@ else
     err "skill-registry.json 缺失 — 运行: python3 scripts/skill_discovery.py generate -o references/skill-registry.json"
 fi
 
-# 5.2 contract schema 检查
-CONTRACT_SCHEMA="$SKILL_DIR/references/schemas/execution-contract-schema.json"
-if [[ -f "$CONTRACT_SCHEMA" ]]; then
+# 5.2 execution lock schema 检查
+LOCK_SCHEMA="$SKILL_DIR/references/schemas/execution-lock-validation-schema.json"
+if [[ -f "$LOCK_SCHEMA" ]]; then
     if python3 "$SKILL_DIR/scripts/contract_compat.py" check-schema 2>/dev/null; then
-        ok "execution-contract-schema.json VALID_TYPE_IDS 与 verify-platform.py 一致"
+        ok "execution-lock-validation-schema.json 与 verify-platform.py 一致"
     else
-        err "execution-contract-schema.json 的 VALID_TYPE_IDS 与 verify-platform.py 不一致"
+        err "execution-lock-validation-schema.json 与 verify-platform.py 不一致"
     fi
 else
-    warn "execution-contract-schema.json 缺失 — contract_compat.py 不可用"
+    err "execution-lock-validation-schema.json 缺失 — lock 校验不可用"
 fi
 
 # 5.3 检查是否存在 regression golden snapshots
@@ -530,10 +548,10 @@ else
     if [[ ! -f "$HAP_BRIDGE" ]]; then
         echo "  2. 安装 hap-bridge: 检查 ~/.claude/mcp-servers/hap-bridge/"
     fi
-    if [[ ! -f "$REGISTRY" ]]; then
+    if [[ $LOCAL_DATA_AVAILABLE -eq 1 && ! -f "$REGISTRY" ]]; then
         echo "  3. 运行 extract-via-browser.py 或 extract-project.py 创建项目注册表"
     fi
-    if [[ ! -f "$SEARCH_DB" ]]; then
+    if [[ $LOCAL_DATA_AVAILABLE -eq 1 && ! -f "$SEARCH_DB" ]]; then
         echo "  4. python3 scripts/build_search_index.py --all"
     fi
     echo ""

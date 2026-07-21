@@ -1,0 +1,25 @@
+interface:
+  id: "agent_2_platform"
+  display_name: "平台能力校验"
+  short_description: "逐节点检查明道云能力、数据链路、批量限制和工作流拓扑。"
+  mode: "verification"
+  category: "quality"
+  triggers:
+    - "Agent 2"
+    - "平台校验"
+    - "节点能力门控"
+  requires:
+    - agents/platform-verify.md
+    - Agent brief input
+    - references/platform/node-capabilities.md
+  instructions: "agents/platform-verify.md"
+  tools: []
+  produces:
+    - agent_2_platform 统一校验 envelope
+  verification:
+    schema: "references/schemas/agent-verification-output.schema.json"
+    command: "python3 scripts/validate-agent-output.py --agent2 <output.json>"
+  pipeline: "读取独立上下文→逐节点累积检查→拓扑检查→输出统一 envelope"
+  references:
+    - agents/platform-verify.md
+    - references/schemas/verification-failure-codes.md

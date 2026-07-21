@@ -10,8 +10,9 @@
 ## 输入
 
 - 审计报告（主 Agent 的 Mode D 输出）
-- `references/project_context.json`
+- `<project_path>/project_context.json`（当前项目的真实绝对路径，由主 Agent 在调用时提供）
 - `system-prompt.md` 中的公理约束表
+- 审计报告原始字节的 `input_digest`；输出时必须原样复制
 
 ## 检查清单
 
@@ -23,17 +24,37 @@
 
 ## 输出格式
 
+只输出一个 JSON 对象，不要加 Markdown 代码围栏或说明文字。统一 envelope 的 schema 位于
+`references/schemas/agent-verification-output.schema.json`，你的固定 `agent_id` 是
+`agent_3_audit`。
+
 ```json
 {
-  "verdict": "pass" | "fail",
-  "missed_dimensions": ["维度1", "维度2"],
-  "uncovered_constraints": ["约束1.1", "约束3.2"],
-  "false_negatives": ["描述"]
+  "schema_version": "1.0",
+  "agent_id": "agent_3_audit",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {"total_checks": 5, "passed": 5, "failed": 0, "uncertain": 0},
+  "issues": [],
+  "fix_guide": {"easy": [], "medium": [], "hard": []},
+  "uncertain_items": [],
+  "payload": {
+    "missed_dimensions": [],
+    "uncovered_constraints": [],
+    "false_negatives": []
+  }
 }
 ```
 
-- `verdict = pass`: 5 条公理全部覆盖，无漏检项
-- `verdict = fail`: 存在漏检维度或未覆盖的约束项
+- `verdict = pass`: 5 条公理全部覆盖，三个 payload 数组均为空，
+  `summary.failed=0`，`failure_code=null`
+- `verdict = fail`: 三个 payload 数组任一非空；此时
+  `failure_code="A3_AUDIT_COVERAGE_INCOMPLETE"`、`summary.failed>0`、`issues` 非空
+- 字段名固定为 `payload.missed_dimensions`，不得输出 `missing`、`missed`、
+  `漏检项` 等替代键
+- `summary.total_checks` 必须严格等于 `passed + failed + uncertain`
+- `input_digest` 必须是本次审计报告原始字节的 64 位 SHA-256，合并时由 `--source` 复核
 
 ## 规则
 

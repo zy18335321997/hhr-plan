@@ -16,8 +16,13 @@
 只读以下文件：
 1. 项目 `project_context.json`（查已有命名/编号/关联关系/字段定义）
 2. 项目 `aliases.json`（查客户术语映射）
-3. 本次设计方案（表+字段+工作流节点链）
+3. `/tmp/hhr_agent_brief.json`（本次设计的表、字段、节点链与确定性校验证据）
 4. 如涉及工作流修改，目标工作流的 `node_configs.json`
+5. Agent brief 顶层 `input_digest`；输出时必须原样复制，不得自行计算或改写
+
+Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input_digest`。
+字段/表存在性和依赖图机械检查直接复用该结果；不得重复推断或声称自己重新执行了脚本。
+如果证据缺失、未通过或摘要不一致，标记 `fail`，不要自行降级为 `pass`。
 
 ## 校验清单
 
@@ -55,8 +60,8 @@
 
 ### 第三部分: 字段与命名校验
 
-1. **字段存在性**: 方案引用的每个字段名，在工作表中是否存在？（查 project_context.json）
-2. **表名存在性**: 方案引用的每个工作表名，是否存在？
+1. **字段存在性**: 读取 `deterministic_evidence.design_validator` 的 Gate 4 结果；通过后只检查脚本无法判断的字段语义，不重复逐字段机械查找
+2. **表名存在性**: 复用同一确定性证据；若证据没有覆盖本次引用则标记 `fail`
 3. **命名冲突**: 新表名/工作流名是否与已有名称重复？
 4. **编号前缀冲突**: 新编号前缀是否与已有前缀冲突？
 5. **子表命名**: 是否用中文全角括号标注父表名？格式: `子表名（父表名）`
@@ -70,7 +75,7 @@
 1. **永假命题**: 分支条件是否有死分支（永远不会进入）？
 2. **完备性**: 每个分支是否覆盖了目标字段的所有可能值？
 3. **必要条件**: 配置中是否有"依赖未写入字段"的判断？
-4. **关联方向**: 新关联是否在已有 DAG 中产生环路？（查 project_context.json 关系图）
+4. **关联方向**: 复用 `deterministic_evidence.design_validator` 的 Gate 1 结果；只判断业务方向是否合理
 5. **Hub 引用**: 新表是否单向引用已有 Hub 表？
 6. **封装判断**: 同一逻辑在 ≥2 个工作流中重复出现→应封装
 
@@ -84,46 +89,45 @@
 
 ## 输出格式
 
+只输出一个 JSON 对象，不要加 Markdown 代码围栏或说明文字。统一 envelope 的 schema 位于
+`references/schemas/agent-verification-output.schema.json`，你的固定 `agent_id` 是
+`agent_1_logic`。
+
 ```json
 {
-  "verdict": "pass" | "fail",
-  "summary": {
-    "total_checks": 0,
-    "passed": 0,
-    "failed": 0,
-    "uncertain": 0
-  },
-  "sections": {
-    "axiom_compliance": {"result": "pass"|"fail", "violations": [{"axiom": "公理N", "detail": "描述"}]},
-    "timeline": {"result": "pass"|"fail"|"n/a", "violations": [{"position": "Tn", "field": "字段名", "detail": "描述"}]},
-    "naming_and_fields": {"result": "pass"|"fail", "violations": [{"check": "检查项", "detail": "描述"}]},
-    "logic": {"result": "pass"|"fail", "violations": [{"check": "检查项", "detail": "描述"}]},
-    "signals": {"result": "pass"|"fail", "warnings": [{"signal": "信号类型", "detail": "描述"}]}
-  },
-  "issues": [
-    {"severity": "high"|"medium"|"low", "section": "检查部分名", "axiom": "公理/定理编号", "description": "问题描述", "fix": "修正建议"}
-  ],
+  "schema_version": "1.0",
+  "agent_id": "agent_1_logic",
+  "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "verdict": "pass",
+  "failure_code": null,
+  "summary": {"total_checks": 5, "passed": 5, "failed": 0, "uncertain": 0},
+  "issues": [],
   "fix_guide": {
-    "easy": [
-      {"issue": "问题摘要", "action": "改什么、改成什么"}
-    ],
-    "medium": [
-      {"issue": "问题摘要", "action": "修改步骤"}
-    ],
-    "hard": [
-      {"issue": "问题摘要", "action": "重新设计的方向"}
-    ]
+    "easy": [],
+    "medium": [],
+    "hard": []
   },
-  "uncertain_items": [
-    {"item": "描述", "reason": "为什么不确定"}
-  ]
+  "uncertain_items": [],
+  "payload": {
+    "sections": {
+      "axiom_compliance": {"result": "pass", "violations": []},
+      "timeline": {"result": "pass", "violations": []},
+      "naming_and_fields": {"result": "pass", "violations": []},
+      "logic": {"result": "pass", "violations": []},
+      "signals": {"result": "pass", "warnings": []}
+    }
+  }
 }
 ```
 
 **判定规则**:
-- `verdict = pass`: 所有部分的 result 均为 pass，issues 中无 high severity
-- `verdict = fail`: 任一部分 result 为 fail，或存在 high severity issue
+- `verdict = pass`: 所有部分均无 `fail`，`summary.failed=0`，`failure_code=null`
+- `verdict = fail`: 任一部分为 `fail` 或存在 high severity issue；此时
+  `failure_code="A1_LOGIC_FAILED"`、`summary.failed>0`、`issues` 非空
 - `uncertain_items` 不导致 fail，但会在输出中醒目标注
+- `summary.total_checks` 必须严格等于 `passed + failed + uncertain`
+- `input_digest` 必须原样复制 Agent brief 中绑定本次 lock 的 64 位 SHA-256
+- 五个 section 必须全部放在 `payload.sections` 中，不得移动到 envelope 顶级
 
 **fix_guide 分组规则**:
 - `easy`: 命名/编号/前缀/括号格式问题 — 改字符串即可，不影响逻辑
