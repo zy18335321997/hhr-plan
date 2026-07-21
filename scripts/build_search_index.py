@@ -92,6 +92,7 @@ def build_index(projects):
             path TEXT NOT NULL,
             worksheets INTEGER,
             workflows INTEGER,
+            source_mtime REAL NOT NULL DEFAULT 0,
             built_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -144,6 +145,13 @@ def build_index(projects):
             tokenize='unicode61'
         );
     """)
+    project_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(projects)")
+    }
+    if "source_mtime" not in project_columns:
+        conn.execute(
+            "ALTER TABLE projects ADD COLUMN source_mtime REAL NOT NULL DEFAULT 0"
+        )
 
     total_wf = 0
     total_sheets = 0
@@ -174,9 +182,29 @@ def build_index(projects):
         ws_count = ctx.get("project", {}).get("total_worksheets", 0) or len(worksheets) or len(sheet_names_from_manifest)
         wf_count = ctx.get("project", {}).get("total_workflows", 0) or len(node_data)
 
+        source_paths = (
+            ctx_path,
+            manifest_path,
+            node_data_path,
+            aliases_path,
+            os.path.join(proj_path, "nodes.json"),
+            os.path.join(proj_path, "_all_workflows.json"),
+        )
+        source_mtime = max(
+            (
+                os.path.getmtime(path)
+                for path in source_paths
+                if os.path.exists(path)
+            ),
+            default=0,
+        )
         conn.execute(
-            "INSERT OR REPLACE INTO projects(name, path, worksheets, workflows) VALUES(?,?,?,?)",
-            (proj_name, proj_path, ws_count, wf_count),
+            (
+                "INSERT OR REPLACE INTO projects"
+                "(name, path, worksheets, workflows, source_mtime) "
+                "VALUES(?,?,?,?,?)"
+            ),
+            (proj_name, proj_path, ws_count, wf_count, source_mtime),
         )
 
         # -- Worksheets + Fields --

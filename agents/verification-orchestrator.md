@@ -51,7 +51,6 @@ Subagent(
 完整指令：<SKILL_DIR>/agents/logic-verify.md
 输入：
 - <absolute_path>/hhr_agent_brief.json
-- <project_path>/project_context.json
 - <project_path>/aliases.json
 - 如涉及工作流修改：对应 node_configs.json
 
@@ -78,7 +77,6 @@ Subagent(
 - <absolute_path>/hhr_agent_brief.json
 - <WORKFLOW_NODES_GUIDE_PATH>
 - <SKILL_DIR>/references/platform/node-capabilities.md
-- <project_path>/business-flow-manifest.json
 
 逐节点完成全部检查，再完成全部拓扑检查。最终只返回一个符合
 <SKILL_DIR>/references/schemas/agent-verification-output.schema.json

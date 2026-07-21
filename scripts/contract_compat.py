@@ -18,6 +18,8 @@ import os
 import sys
 from pathlib import Path
 
+from design_ir_validator import validate_design_ir
+
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = (
@@ -32,6 +34,148 @@ AGENT_GATE_NAMES = {
     "agent_2_platform",
     "agent_3_audit",
 }
+OPTION_FIELD_TYPES = {"SingleSelect", "MultiSelect", "Dropdown"}
+
+
+def _validate_option_ref(
+    value: object,
+    path: str,
+    violations: list[dict],
+) -> str | None:
+    if not isinstance(value, dict):
+        collect_violation(
+            violations,
+            "high",
+            path,
+            "选项值必须是 {key, label}，不能只写中文 label 或裸 key",
+        )
+        return None
+    _require_nonempty(value.get("key"), f"{path}.key", violations)
+    _require_nonempty(value.get("label"), f"{path}.label", violations)
+    key = value.get("key")
+    return key if isinstance(key, str) and key else None
+
+
+def _validate_option_value(
+    value: object,
+    field: dict,
+    path: str,
+    violations: list[dict],
+    require_object: bool = True,
+) -> None:
+    field_type = field.get("type")
+    if field_type not in OPTION_FIELD_TYPES:
+        return
+    values = value if isinstance(value, list) else [value]
+    if field_type == "MultiSelect" and not isinstance(value, list):
+        collect_violation(
+            violations,
+            "high",
+            path,
+            "MultiSelect 值必须是 {key, label} 数组",
+        )
+    if field_type != "MultiSelect" and isinstance(value, list):
+        collect_violation(
+            violations,
+            "high",
+            path,
+            f"{field_type} 只能使用单个 {{key, label}}，不能使用数组",
+        )
+    valid_options = {
+        item.get("key"): item.get("label")
+        for item in field.get("options", [])
+        if isinstance(item, dict) and item.get("key")
+    }
+    for index, item in enumerate(values):
+        item_path = f"{path}[{index}]" if isinstance(value, list) else path
+        if not require_object and isinstance(item, str) and item:
+            key = item
+        else:
+            key = _validate_option_ref(item, item_path, violations)
+        if key and valid_options and key not in valid_options:
+            collect_violation(
+                violations,
+                "high",
+                f"{item_path}.key",
+                f"option key={key!r} 不在字段 options 中",
+            )
+        if (
+            key
+            and require_object
+            and isinstance(item, dict)
+            and valid_options.get(key)
+            and item.get("label") != valid_options[key]
+        ):
+            collect_violation(
+                violations,
+                "high",
+                f"{item_path}.label",
+                (
+                    f"option label 与 key 不匹配: "
+                    f"应为 {valid_options[key]!r}"
+                ),
+            )
+
+
+def _walk_config_field_refs(
+    value: object,
+    fields_by_id: dict[str, dict],
+    path: str,
+    violations: list[dict],
+    require_option_object: bool = True,
+) -> None:
+    if isinstance(value, dict):
+        field_id = value.get("fieldId")
+        if field_id:
+            field = fields_by_id.get(field_id)
+            if field is None:
+                collect_violation(
+                    violations,
+                    "high",
+                    f"{path}.fieldId",
+                    f"配置引用了未登记 fieldId: {field_id}",
+                )
+            elif "value" in value:
+                _validate_option_value(
+                    value.get("value"),
+                    field,
+                    f"{path}.value",
+                    violations,
+                    require_object=require_option_object,
+                )
+        left = value.get("left")
+        right = value.get("right")
+        if isinstance(left, dict) and isinstance(right, dict):
+            condition_field = fields_by_id.get(left.get("fieldId"))
+            if (
+                condition_field
+                and right.get("kind") == "literal"
+                and "value" in right
+            ):
+                _validate_option_value(
+                    right.get("value"),
+                    condition_field,
+                    f"{path}.right.value",
+                    violations,
+                    require_object=require_option_object,
+                )
+        for key, child in value.items():
+            _walk_config_field_refs(
+                child,
+                fields_by_id,
+                f"{path}.{key}",
+                violations,
+                require_option_object=require_option_object,
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _walk_config_field_refs(
+                child,
+                fields_by_id,
+                f"{path}[{index}]",
+                violations,
+                require_option_object=require_option_object,
+            )
 
 
 def load_schema() -> dict:
@@ -185,6 +329,8 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
         severity="medium",
     )
 
+    fields_by_id: dict[str, dict] = {}
+    field_worksheet_by_id: dict[str, str] = {}
     sheets = data.get("sheets")
     sheets_schema = schema.get("sheets", {})
     if not isinstance(sheets, list):
@@ -240,6 +386,55 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
                         f"{field_path}.type",
                         f"未登记的字段类型: {field_type}",
                     )
+                field_id = field.get("field_id")
+                if isinstance(field_id, str) and field_id:
+                    if field_id in fields_by_id:
+                        collect_violation(
+                            violations,
+                            "high",
+                            f"{field_path}.field_id",
+                            f"field_id 重复: {field_id}",
+                        )
+                    fields_by_id[field_id] = field
+                    field_worksheet_by_id[field_id] = sheet.get(
+                        "worksheet_id", ""
+                    )
+                if field_type in OPTION_FIELD_TYPES:
+                    options = field.get("options")
+                    if not isinstance(options, list) or not options:
+                        collect_violation(
+                            violations,
+                            "high",
+                            f"{field_path}.options",
+                            f"{field_type} 字段必须提供非空 options",
+                        )
+                    else:
+                        option_keys = set()
+                        for option_index, option in enumerate(options):
+                            option_path = (
+                                f"{field_path}.options[{option_index}]"
+                            )
+                            key = _validate_option_ref(
+                                option,
+                                option_path,
+                                violations,
+                            )
+                            if key in option_keys:
+                                collect_violation(
+                                    violations,
+                                    "high",
+                                    f"{option_path}.key",
+                                    f"option key 重复: {key}",
+                                )
+                            if key:
+                                option_keys.add(key)
+                    if "default_value" in field:
+                        _validate_option_value(
+                            field.get("default_value"),
+                            field,
+                            f"{field_path}.default_value",
+                            violations,
+                        )
 
     associations = data.get("associations")
     association_schema = schema.get("associations", {})
@@ -468,6 +663,13 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
                         f"{node_path}.config",
                         "config 必须是对象",
                     )
+                else:
+                    _walk_config_field_refs(
+                        node.get("config"),
+                        fields_by_id,
+                        f"{node_path}.config",
+                        violations,
+                    )
 
             references = workflow.get("field_references")
             if not isinstance(references, list):
@@ -495,6 +697,116 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
                                 f"{ref_path}.{key}",
                                 violations,
                             )
+                        field_id = reference.get("field_id")
+                        field = fields_by_id.get(field_id)
+                        if field is None:
+                            collect_violation(
+                                violations,
+                                "high",
+                                f"{ref_path}.field_id",
+                                f"field_id={field_id!r} 不在 sheets.fields 中",
+                            )
+                        else:
+                            expected_worksheet = field_worksheet_by_id.get(
+                                field_id
+                            )
+                            if reference.get("worksheet_id") != expected_worksheet:
+                                collect_violation(
+                                    violations,
+                                    "high",
+                                    f"{ref_path}.worksheet_id",
+                                    (
+                                        "字段引用 worksheet_id 与 sheets 中"
+                                        f"定义不一致: {expected_worksheet!r}"
+                                    ),
+                                )
+                            if reference.get("type") != field.get("type"):
+                                collect_violation(
+                                    violations,
+                                    "high",
+                                    f"{ref_path}.type",
+                                    (
+                                        "字段引用 type 与 sheets 中定义不一致: "
+                                        f"{field.get('type')!r}"
+                                    ),
+                                )
+                        expected_options = reference.get("expected_options")
+                        if field and field.get("type") in OPTION_FIELD_TYPES:
+                            if not isinstance(expected_options, list):
+                                collect_violation(
+                                    violations,
+                                    "high",
+                                    f"{ref_path}.expected_options",
+                                    "选项字段必须提供 expected_options",
+                                )
+                            else:
+                                sheet_keys = {
+                                    item.get("key")
+                                    for item in field.get("options", [])
+                                    if isinstance(item, dict)
+                                }
+                                reference_keys = {
+                                    _validate_option_ref(
+                                        item,
+                                        (
+                                            f"{ref_path}.expected_options"
+                                            f"[{option_index}]"
+                                        ),
+                                        violations,
+                                    )
+                                    for option_index, item in enumerate(
+                                        expected_options
+                                    )
+                                }
+                                reference_keys.discard(None)
+                                if reference_keys != sheet_keys:
+                                    collect_violation(
+                                        violations,
+                                        "high",
+                                        f"{ref_path}.expected_options",
+                                        (
+                                            "expected_options keys 必须与"
+                                            " sheets.fields.options 完全一致"
+                                        ),
+                                    )
+                                sheet_labels = {
+                                    item.get("key"): item.get("label")
+                                    for item in field.get("options", [])
+                                    if isinstance(item, dict) and item.get("key")
+                                }
+                                reference_labels = {
+                                    item.get("key"): item.get("label")
+                                    for item in expected_options
+                                    if isinstance(item, dict) and item.get("key")
+                                }
+                                if reference_labels != sheet_labels:
+                                    collect_violation(
+                                        violations,
+                                        "high",
+                                        f"{ref_path}.expected_options",
+                                        (
+                                            "expected_options 的 key-label "
+                                            "映射必须与 sheets.fields.options 一致"
+                                        ),
+                                    )
+                        if reference.get("type") == "Relation":
+                            _require_nonempty(
+                                reference.get("relation_worksheet_id"),
+                                f"{ref_path}.relation_worksheet_id",
+                                violations,
+                            )
+                            if (
+                                field
+                                and field.get("relation_worksheet_id")
+                                and reference.get("relation_worksheet_id")
+                                != field.get("relation_worksheet_id")
+                            ):
+                                collect_violation(
+                                    violations,
+                                    "high",
+                                    f"{ref_path}.relation_worksheet_id",
+                                    "关联目标与 sheets.fields 定义不一致",
+                                )
 
     gates = data.get("gates")
     gate_schema = schema.get("gates", {})
@@ -533,6 +845,7 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
                     f"$.gates.{gate_name}.result",
                     f"gate result 值无效: {result}",
                 )
+    violations.extend(validate_design_ir(data))
     return violations
 
 
@@ -699,6 +1012,7 @@ def validate_exec(data: dict) -> list[dict]:
                 )
 
     references = data.get("field_references")
+    exec_fields_by_id: dict[str, dict] = {}
     if not isinstance(references, list):
         collect_violation(
             violations,
@@ -722,6 +1036,45 @@ def validate_exec(data: dict) -> list[dict]:
                         f"{path}.{key}",
                         violations,
                     )
+                field_id = reference.get("fieldId")
+                if isinstance(field_id, str) and field_id:
+                    exec_fields_by_id[field_id] = {
+                        "field_id": field_id,
+                        "type": reference.get("type"),
+                        "options": reference.get("expected_options", []),
+                    }
+                if reference.get("type") in OPTION_FIELD_TYPES:
+                    expected_options = reference.get("expected_options")
+                    if not isinstance(expected_options, list) or not expected_options:
+                        collect_violation(
+                            violations,
+                            "high",
+                            f"{path}.expected_options",
+                            "选项字段必须提供非空 expected_options",
+                        )
+                    else:
+                        for option_index, option in enumerate(expected_options):
+                            _validate_option_ref(
+                                option,
+                                f"{path}.expected_options[{option_index}]",
+                                violations,
+                            )
+                if reference.get("type") == "Relation":
+                    _require_nonempty(
+                        reference.get("relation_worksheet_id"),
+                        f"{path}.relation_worksheet_id",
+                        violations,
+                    )
+    if isinstance(nodes, list):
+        for index, node in enumerate(nodes):
+            if isinstance(node, dict):
+                _walk_config_field_refs(
+                    node.get("config", {}),
+                    exec_fields_by_id,
+                    f"$.nodes[{index}].config",
+                    violations,
+                    require_option_object=False,
+                )
     if not isinstance(data.get("dependencies"), dict):
         collect_violation(
             violations,

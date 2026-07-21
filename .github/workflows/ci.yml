@@ -186,15 +186,12 @@ jobs:
           validate-exec "$RUNNER_TEMP/execution_contract.json"
           --quiet
 
-      - name: Run or explicitly skip hap-flow-exec integration preflight
-        shell: bash
-        run: |
-          preflight_path="${HAP_FLOW_EXEC_PREFLIGHT:-../hap-flow-exec/scripts/preflight.py}"
-          if [[ -f "$preflight_path" ]]; then
-            python3 "$preflight_path" "$RUNNER_TEMP/execution_contract.json"
-          else
-            echo "::notice title=hap-flow-exec skipped::SKIP: sibling preflight not installed at $preflight_path"
-          fi
+      - name: Verify derived contract matches committed golden
+        run: >-
+          python3 -c
+          "import json,sys; actual=json.load(open(sys.argv[1])); expected=json.load(open(sys.argv[2])); assert actual == expected"
+          "$RUNNER_TEMP/execution_contract.json"
+          tests/fixtures/expected_execution_contract.json
 
   regression-audit:
     name: Regression Fixture Check

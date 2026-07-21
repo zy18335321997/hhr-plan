@@ -76,7 +76,7 @@ def generate_skeleton(
 
     skeleton = {
         "meta": {
-            "schema_version": "2.0",
+            "schema_version": "2.1",
             "source_design": source_design,
             "project": project,
             "mode": mode,
@@ -95,6 +95,20 @@ def generate_skeleton(
             "worksheet_suffix_format": "子表（父表/操作类型）",
             "bool_field_prefix": "是否",
             "field_ordering": ["身份标识", "业务属性", "关联引用", "计算汇总"]
+        },
+        "design_ir": {
+            "requirements": [],
+            "actors": [],
+            "scenarios": [],
+            "entities": [],
+            "state_machines": [],
+            "business_rules": [],
+            "permissions": [],
+            "views": [],
+            "buttons": [],
+            "notifications": [],
+            "assumptions": [],
+            "traceability": []
         },
         "sheets": sheet_list,
         "associations": [],

@@ -11,6 +11,8 @@
   `nodeAlias`）遵循执行器协议，不做改名。
 - 所有平台 ID 和节点 `config` 必须在 lock 中明确给出。转换器不会根据名称、
   上下文或节点类型补值。
+- 选项字段统一使用 `{key, label}`：lock 同时保存平台 key 与客户可读 label；
+  `lock_to_contract.py` 只把 key 传给执行器，严禁用中文 label 猜 key。
 
 机器校验定义：
 `references/schemas/execution-lock-validation-schema.json`。
@@ -20,7 +22,7 @@
 ```json
 {
   "meta": {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "source_design": "path/to/design_spec.md",
     "project": "项目名",
     "mode": "A",
@@ -40,6 +42,20 @@
     "bool_field_prefix": "是否",
     "field_ordering": ["身份标识", "业务属性", "关联引用", "计算汇总"]
   },
+  "design_ir": {
+    "requirements": [{"id": "REQ-001", "statement": "客户原始需求", "priority": "must", "acceptance_criteria": ["可验收结果"]}],
+    "actors": [{"id": "ACT-001", "name": "业务角色", "responsibilities": ["角色职责"]}],
+    "scenarios": [{"id": "SCN-001", "actor_ids": ["ACT-001"], "trigger": "触发条件", "outcome": "业务结果", "exceptions": []}],
+    "entities": [{"id": "ENT-001", "table_name": "工作表名", "field_dimensions": {"identity": [], "business": ["业务字段"], "status": ["状态"], "time": [], "ownership": [], "relations": [], "audit": []}}],
+    "state_machines": [],
+    "business_rules": [],
+    "permissions": [{"actor_id": "ACT-001", "table": "工作表名", "actions": ["read"], "row_scope": "按角色范围"}],
+    "views": [{"id": "VIEW-001", "actor_id": "ACT-001", "name": "角色视图", "table": "工作表名", "fields": [], "filter": "", "sort": ""}],
+    "buttons": [],
+    "notifications": [],
+    "assumptions": [],
+    "traceability": [{"requirement_id": "REQ-001", "artifacts": [{"kind": "entity", "ref": "ENT-001"}]}]
+  },
   "sheets": [
     {
       "name": "采购需求",
@@ -51,8 +67,12 @@
         {
           "name": "状态",
           "field_id": "field-id",
-          "type": "Text",
-          "default_value": null,
+          "type": "SingleSelect",
+          "options": [
+            {"key": "draft-option-key", "label": "草稿"},
+            {"key": "submitted-option-key", "label": "已提交"}
+          ],
+          "default_value": {"key": "draft-option-key", "label": "草稿"},
           "required": true,
           "unique": false,
           "axiom_ref": "公理3",
@@ -110,7 +130,13 @@
             "worksheet": "worksheet-id",
             "target": {"kind": "trigger", "node": "trigger"},
             "fields": [
-              {"fieldId": "field-id", "value": "submitted-option-key"}
+              {
+                "fieldId": "field-id",
+                "value": {
+                  "key": "submitted-option-key",
+                  "label": "已提交"
+                }
+              }
             ]
           }
         }
@@ -121,7 +147,10 @@
           "worksheet_id": "worksheet-id",
           "field_name": "状态",
           "type": "SingleSelect",
-          "expected_options": ["草稿", "已提交"]
+          "expected_options": [
+            {"key": "draft-option-key", "label": "草稿"},
+            {"key": "submitted-option-key", "label": "已提交"}
+          ]
         }
       ],
       "dependencies": {"subprocesses": []},
@@ -142,7 +171,7 @@
   "verification": {
     "input_digest": "<由 agent_prepare.py 计算的 64 位 SHA-256>",
     "verification_agents": {
-      "schema_version": "1.0",
+      "schema_version": "1.1",
       "completeness": "pass",
       "semantic_verdict": "pass",
       "agents": ["agent_1_logic", "agent_2_platform"]
@@ -151,6 +180,9 @@
   }
 }
 ```
+
+`field_references` 中 `type=Relation` 时必须额外提供
+`relation_worksheet_id`，并在 live preflight 中与平台关联目标逐项核对。
 
 `verification` 与 Agent gates 只能由 `verification_merge.py` 写入。基础 Gate 1-6
 属于设计输入并参与摘要；顶层 `verification` 和 Agent gates 是派生裁决，不参与摘要，

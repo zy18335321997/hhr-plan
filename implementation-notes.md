@@ -51,7 +51,7 @@
 
 - `lock_to_contract.py` 在转换前强制 Gate 1-6（Gate 3 可 `n/a`）、Agent 1/2、
   语义裁决和当前 lock 摘要全部通过；缺失、pending、fail 均 Hard Stop。
-- lock 固定 `meta.schema_version=2.0`，执行合约固定 `1.0`；触发类型、触发字段
+- lock 固定 `meta.schema_version=2.1`，执行合约固定 `1.0`；触发类型、触发字段
   一致性以及执行节点 `type_id/action_id` 均在兼容校验器中确定性验证。
 - `lock_manager validate` 不再把低/中严重度 schema violation 降级成 warning；
   `init --source-design` 改为必填，禁止生成无法追溯来源的 lock。
@@ -137,3 +137,33 @@
 - 2026-07-21：使用仓库自包含 fixture 实际并行调用 Cursor Agent 1/2；两个输出均
   通过统一 Schema、摘要绑定和语义校验，`verification_merge.py --dry-run`
   返回 format/semantic 双 pass。Agent 1 报告明确复用了 design-validator 证据。
+
+## 2.1 深度升级决策
+
+- `execution_lock.json` 继续作为唯一机器真源，在顶层增加 `design_ir`，不拆成
+  多份 requirement/state 文件。
+- Agent 负责客户语言理解、业务语义判断和失败收敛；CLI 只做确定性转换、探测、
+  写入、比对和状态恢复，不允许 CLI 自主修改设计。
+- option 引用统一为 `{key, label}`；执行使用 key，面向客户的文档展示 label。
+- `hap-flow-exec` 在改造前建立独立 Git 基线，避免无版本执行器无法回滚。
+- 三类评测固定为模糊绿地、采购变更棕地和复杂执行恢复。设计基线平均 7.75，
+  与无 Skill 持平；hhr-plan 的诚实边界提升 4.0，但可执行细节下降 2.5，
+  需求覆盖下降 1.5。升级目标记录在 `tests/evals/baseline-score.json`。
+
+## 2.2 深度升级实施记录
+
+- lock schema 升至 2.1，新增统一 `design_ir`；需求、角色、场景、实体、状态机、
+  规则、权限、视图、按钮、通知、假设和追踪由确定性校验器守门。
+- option 引用统一为 `{key, label}`；lock 保留双值，执行合约只输出 key，并对
+  fieldId、worksheetId、字段类型和 expected_options 做交叉验证。
+- Mode A 改为一次性交付完整条件化预览，不再只给 Tier 1 就停止；Mode B 在缺少
+  项目上下文时仍给出带假设和采集合同的完整业务设计，但不伪造平台 ID。
+- `SKILL.md` bootstrap 删除目录级 references；`auto_sync.py` 按 stale 项目生成
+  节点数据和索引；lifecycle 查询改为只读现有依赖图。
+- Agent brief 新增 design_ir 和 scoped manifest，Agent 1 增加客户需求完整度，
+  Agent 2 输出节点必须与当前 lock 对齐，空壳 pass 不再可合并。
+- 补齐 pattern 索引中的 13 个缺失模式文件，并加入索引路径测试。
+- 升级后同一组设计评测由 7.75 提升到 9.08（+1.33），需求覆盖 9.25、
+  状态完备 9.25、可执行细节 8.0，达到预设目标。
+- `hap-flow-exec` 已建立独立 Git 基线；新增 contract→batch DSL、live preflight、
+  execution_state 和失败分类。真实写入测试等待用户提供沙箱。

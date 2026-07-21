@@ -1,0 +1,19 @@
+{
+  "case": "complex-execution-recovery",
+  "mode": "deterministic_mock",
+  "date": "2026-07-21",
+  "checks": {
+    "branch_aliases_inlined": "pass",
+    "alias_to_nodeAlias": "pass",
+    "physical_trigger_required": "pass",
+    "option_key_snapshot_preflight": "pass",
+    "missing_option_key_blocked": "pass",
+    "pid_and_alias_mapping_required": "pass",
+    "completed_step_not_repeated": "pass",
+    "transient_retry_limit_three": "pass",
+    "semantic_error_mode_b_handoff": "pass",
+    "contract_digest_invalidates_stale_state": "pass"
+  },
+  "live_write": "pending_user_sandbox",
+  "verdict": "pass"
+}

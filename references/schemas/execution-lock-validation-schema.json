@@ -1,10 +1,11 @@
 {
   "$description": "execution_lock.json validation schema. The lock is the only design source of truth; execution_contract.json is derived.",
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "required_top_keys": [
     "meta",
     "target",
     "naming",
+    "design_ir",
     "sheets",
     "associations",
     "workflows",
@@ -34,6 +35,22 @@
       "worksheet_suffix_format",
       "bool_field_prefix",
       "field_ordering"
+    ]
+  },
+  "design_ir": {
+    "required_keys": [
+      "requirements",
+      "actors",
+      "scenarios",
+      "entities",
+      "state_machines",
+      "business_rules",
+      "permissions",
+      "views",
+      "buttons",
+      "notifications",
+      "assumptions",
+      "traceability"
     ]
   },
   "sheets": {
@@ -77,7 +94,10 @@
       "Formula",
       "Location",
       "Description",
-      "Duration"
+      "Duration",
+      "SingleSelect",
+      "MultiSelect",
+      "Dropdown"
     ],
     "valid_association_types": [29, 30, 34],
     "valid_association_labels": ["关联表", "他表字段", "子表"]

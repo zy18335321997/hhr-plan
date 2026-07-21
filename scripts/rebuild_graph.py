@@ -9,7 +9,7 @@ Supports two data sources:
 
 Usage:
     python3 scripts/rebuild_graph.py 几建
-    python3 scripts/rebuild_graph.py 几建 --lifecycle 采购需求
+    python3 scripts/rebuild_graph.py 几建 --lifecycle 采购需求  # read-only query
 """
 
 import json, os, sys, re
@@ -145,8 +145,8 @@ def _parse_mcp_edges(node_data, all_sheet_names):
     return edges, sheet_readers, sheet_writers, all_sheet_names
 
 
-def rebuild_graph(project_name):
-    proj_dir = os.path.join(BASE, project_name)
+def rebuild_graph(project_name, project_path=None):
+    proj_dir = project_path or os.path.join(BASE, project_name)
     ctx = load_json(os.path.join(proj_dir, "project_context.json"))
 
     sheets = ctx.get("worksheets", {})
@@ -310,10 +310,29 @@ if __name__ == "__main__":
         sys.exit(1)
 
     project = sys.argv[1]
-    graph = rebuild_graph(project)
-
+    project_path = None
+    if "--project-path" in sys.argv:
+        path_index = sys.argv.index("--project-path")
+        if path_index + 1 >= len(sys.argv):
+            print("--project-path requires a value", file=sys.stderr)
+            sys.exit(2)
+        project_path = sys.argv[path_index + 1]
     if len(sys.argv) >= 4 and sys.argv[2] == "--lifecycle":
+        graph_path = os.path.join(
+            project_path or os.path.join(BASE, project),
+            "dependency_graph.json",
+        )
+        if not os.path.exists(graph_path):
+            print(
+                f"Dependency graph missing: {graph_path}. "
+                "Run rebuild_graph.py <project> first.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        graph = load_json(graph_path)
         entity = sys.argv[3]
         lc = extract_lifecycle(graph, entity)
         if lc:
             print_lifecycle(lc)
+    else:
+        rebuild_graph(project, project_path)

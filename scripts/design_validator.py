@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 from agent_prepare import compute_lock_digest
+from design_ir_validator import validate_design_ir
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path.home() / "Documents" / "workflow-output"
@@ -463,6 +464,14 @@ def main():
         try:
             lock = _load_json(lock_path)
             lock_digest = compute_lock_digest(lock)
+            ir_issues = validate_design_ir(lock)
+            results.append(
+                {
+                    "gate": "Richness Gate — design_ir 完整度",
+                    "verdict": "fail" if ir_issues else "pass",
+                    "issues": ir_issues,
+                }
+            )
             checks = _extract_refs_from_lock(lock)
             if checks:
                 results.append(

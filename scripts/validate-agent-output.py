@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 AGENT_IDS = {
     "agent1": "agent_1_logic",
     "agent2": "agent_2_platform",
@@ -57,6 +57,7 @@ AGENT1_SECTIONS = {
     "naming_and_fields",
     "logic",
     "signals",
+    "completeness",
 }
 AGENT2_CHECKS = {
     "type_exists",
@@ -452,12 +453,16 @@ def validate_agent1(data):
         sections, AGENT1_SECTIONS, "$.payload.sections", failures
     )
     failed_sections = 0
+    blocking_sections = 0
     for name in AGENT1_SECTIONS:
         if name in sections:
             result = _validate_check_result(
                 sections[name], f"$.payload.sections.{name}", failures
             )
             failed_sections += int(result == "fail")
+            blocking_sections += int(
+                result in {"fail", "uncertain", "warn"}
+            )
     if (
         data.get("verdict") == "pass"
         and failed_sections
@@ -467,6 +472,30 @@ def validate_agent1(data):
                 "$.verdict",
                 "FORMAT_PAYLOAD_VERDICT_CONFLICT",
                 "Agent 1 payload 含 fail section，envelope 不得判 pass",
+            )
+        )
+    if data.get("verdict") == "pass" and blocking_sections:
+        failures.append(
+            _failure(
+                "$.verdict",
+                "FORMAT_UNRESOLVED_AGENT_CHECK",
+                (
+                    "Agent 1 含 fail/uncertain/warn section 时不得判 pass；"
+                    "必须补证据或阻断"
+                ),
+            )
+        )
+    completeness = sections.get("completeness")
+    if (
+        data.get("verdict") == "pass"
+        and isinstance(completeness, dict)
+        and completeness.get("result") != "pass"
+    ):
+        failures.append(
+            _failure(
+                "$.payload.sections.completeness.result",
+                "FORMAT_COMPLETENESS_NOT_PASS",
+                "客户需求完整度不是 pass 时，Agent 1 envelope 不得判 pass",
             )
         )
     return failures
@@ -483,6 +512,7 @@ def validate_agent2(data):
     )
 
     failed_checks = 0
+    blocking_checks = 0
     node_checks = payload.get("node_checks")
     if not isinstance(node_checks, list):
         failures.append(
@@ -500,7 +530,15 @@ def validate_agent2(data):
                     _failure(path, "FORMAT_TYPE_MISMATCH", "节点检查必须是对象")
                 )
                 continue
-            for key in ("node_name", "node_type", "checks"):
+            for key in (
+                "node_alias",
+                "workflow_name",
+                "node_name",
+                "node_type",
+                "type_id",
+                "action_id",
+                "checks",
+            ):
                 if key not in node:
                     failures.append(
                         _failure(
@@ -526,6 +564,9 @@ def validate_agent2(data):
                         checks[name], f"{path}.checks.{name}", failures
                     )
                     failed_checks += int(result == "fail")
+                    blocking_checks += int(
+                        result in {"fail", "uncertain", "warn"}
+                    )
 
     topology = payload.get("topology_checks")
     if not isinstance(topology, dict):
@@ -546,6 +587,9 @@ def validate_agent2(data):
                     topology[name], f"$.payload.topology_checks.{name}", failures
                 )
                 failed_checks += int(result == "fail")
+                blocking_checks += int(
+                    result in {"fail", "uncertain", "warn"}
+                )
 
     if data.get("verdict") == "pass" and failed_checks:
         failures.append(
@@ -553,6 +597,17 @@ def validate_agent2(data):
                 "$.verdict",
                 "FORMAT_PAYLOAD_VERDICT_CONFLICT",
                 "Agent 2 payload 含 fail check，envelope 不得判 pass",
+            )
+        )
+    if data.get("verdict") == "pass" and blocking_checks:
+        failures.append(
+            _failure(
+                "$.verdict",
+                "FORMAT_UNRESOLVED_AGENT_CHECK",
+                (
+                    "Agent 2 含 fail/uncertain/warn 检查时不得判 pass；"
+                    "必须补充证据或阻断"
+                ),
             )
         )
     return failures
@@ -680,8 +735,12 @@ def _selftest_cases():
     agent2["payload"] = {
         "node_checks": [
             {
+                "node_alias": "trigger",
+                "workflow_name": "测试工作流",
                 "node_name": "触发",
                 "node_type": "trigger(typeId=0)",
+                "type_id": 0,
+                "action_id": None,
                 "checks": {
                     name: copy.deepcopy(check) for name in AGENT2_CHECKS
                 },

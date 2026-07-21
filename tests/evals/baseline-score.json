@@ -1,0 +1,42 @@
+{
+  "eval_mode": "full_test",
+  "date": "2026-07-21",
+  "cases": {
+    "greenfield-ambiguous-procurement": {
+      "with_skill": 7.33,
+      "baseline": 7.83,
+      "delta": -0.5
+    },
+    "brownfield-purchase-change-approval": {
+      "with_skill": 8.17,
+      "baseline": 7.67,
+      "delta": 0.5
+    }
+  },
+  "average": {
+    "with_skill": 7.75,
+    "baseline": 7.75,
+    "delta": 0.0
+  },
+  "dimension_delta": {
+    "requirement_coverage": -1.5,
+    "business_semantics": -0.5,
+    "state_completeness": -0.5,
+    "role_permission_views": 1.0,
+    "execution_detail": -2.5,
+    "honesty_boundary": 4.0
+  },
+  "observed_gaps": [
+    "确认门过强，绿地输出停在锚点确认，未完成用户当轮要求的完整方案",
+    "缺少逐实体状态机、守卫、补偿和需求到配置的追踪",
+    "公理和内部协议没有充分转化为字段、视图和节点级执行细节",
+    "棕地缺少真实上下文时能诚实阻断，但条件化方案和后续采集合同不够完整"
+  ],
+  "target": {
+    "average_min": 8.5,
+    "requirement_coverage_min": 9.0,
+    "state_completeness_min": 9.0,
+    "execution_detail_min": 8.0,
+    "honesty_boundary_min": 9.0
+  }
+}

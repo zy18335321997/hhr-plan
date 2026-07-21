@@ -21,7 +21,7 @@ interface:
   verification:
     schema: "references/schemas/agent-verification-output.schema.json"
     command: "python3 scripts/validate-agent-output.py --agent1 <output.json>"
-  pipeline: "读取独立上下文→完成五部分累积检查→输出统一 envelope"
+  pipeline: "读取独立上下文→完成六部分累积检查→输出统一 envelope"
   references:
     - agents/logic-verify.md
     - references/schemas/verification-failure-codes.md

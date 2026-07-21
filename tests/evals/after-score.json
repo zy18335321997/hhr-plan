@@ -1,0 +1,35 @@
+{
+  "eval_mode": "full_test",
+  "date": "2026-07-21",
+  "cases": {
+    "greenfield-ambiguous-procurement": {
+      "before": 7.33,
+      "after": 9.17,
+      "delta": 1.84
+    },
+    "brownfield-purchase-change-approval": {
+      "before": 8.17,
+      "after": 9.0,
+      "delta": 0.83
+    }
+  },
+  "average": {
+    "before": 7.75,
+    "after": 9.08,
+    "delta": 1.33
+  },
+  "dimensions": {
+    "requirement_coverage": 9.25,
+    "business_semantics": 9.0,
+    "state_completeness": 9.25,
+    "role_permission_views": 9.0,
+    "execution_detail": 8.0,
+    "honesty_boundary": 10.0
+  },
+  "target_pass": true,
+  "remaining_boundaries": [
+    "真实字段 ID、option key 和棕地依赖必须由项目上下文与 live preflight 提供",
+    "客户未确认的拆单、多供应商、分批收付等规则继续保留为 assumptions",
+    "真实 HAP 写入验收等待用户指定沙箱应用"
+  ]
+}

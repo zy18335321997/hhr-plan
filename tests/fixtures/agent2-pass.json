@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "agent_id": "agent_2_platform",
   "input_digest": "fb62c65519f17b886ee47b4488161f19ffec529af3d926ce5ad70a492f18ad2c",
   "verdict": "pass",
@@ -20,8 +20,12 @@
   "payload": {
     "node_checks": [
       {
-        "node_name": "触发",
-        "node_type": "trigger(typeId=0)",
+        "node_alias": "update_status",
+        "workflow_name": "提交采购需求",
+        "node_name": "更新状态",
+        "node_type": "update_record(typeId=6)",
+        "type_id": 6,
+        "action_id": 2,
         "checks": {
           "type_exists": {"result": "pass", "detail": "支持"},
           "sub_mode": {"result": "pass", "detail": "适用"},

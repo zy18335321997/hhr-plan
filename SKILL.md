@@ -2,20 +2,13 @@
 name: hhr-plan
 description: 明道云 APaaS 设计引擎。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用。
 user_invocable: true
-version: 2.0.0
+version: 2.1.0
 lifecycle: validated
 references:
   - system-prompt.md
-  - references/tool-dispatch.md
-  - references/unified-design-spec.md
-  - references/theorems-and-protocols.md
-  - agents/verification-orchestrator.md
-  - references/templates/execution-lock-schema.md
-  - built-in-skills/
-  - agents/descriptors/
 ---
 
-# hhr-plan 2.0.0
+# hhr-plan 2.1.0
 
 明道云 APaaS 设计、诊断与审计入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
 
@@ -86,6 +79,7 @@ references:
 | 工具选择、命令和本地优先级 | `references/tool-dispatch.md` |
 | Mode 步骤与阻断规则 | 对应 `built-in-skills/mode-*.md` |
 | Agent 输出格式与合并 | Schema + `agents/verification-orchestrator.md` |
+| 客户需求到系统设计语言 | `execution_lock.json.design_ir` |
 | 设计阶段机器真源 | `execution_lock.json` |
 | 执行阶段派生输入 | `execution_contract.json`，只能由 `lock_to_contract.py` 生成 |
 | 可发现接口 | `agents/descriptors/*.yaml`；`references/skill-registry.json` 是生成物 |
@@ -103,8 +97,8 @@ references:
 
 | Mode | 完成条件 |
 |---|---|
-| A | 用户确认设计锚点；设计与 `execution_lock.json` 一致；三层门控和 Agent 1/2 通过；成功派生并校验执行合约，或因缺少精确 ID 明确 Hard Stop。 |
-| B | 真实项目路径已确认；影响面和时序完整；修改后的 lock 通过确定性检查及 Agent 1/2；成功派生并校验执行合约，或明确阻断。 |
+| A | 客户需求 100% 追踪到 design_ir；状态机、权限、视图和异常路径完整；设计与 lock 一致；三层门控和 Agent 1/2 通过；成功派生并校验执行合约，或因缺少精确 ID 明确 Hard Stop。 |
+| B | 真实项目路径已确认；影响面、design_ir 增量和时序完整；修改后的 lock 通过确定性检查及 Agent 1/2；成功派生并校验执行合约，或明确阻断。 |
 | C | 给出可复核的根因、证据链、影响面和排除项；连续假说失败时输出已知/未知清单并停止。 |
 | D | 当前项目数据范围明确；扫描维度完整；Agent 3 输出通过格式和语义校验；报告按严重度排序。 |
 
@@ -136,7 +130,8 @@ blocker: <阻断原因或 null>
 Mode A/B 的固定交接顺序：
 
 1. 设计写入 `execution_lock.json`；它是唯一可编辑机器真源。
-2. 运行 lock、项目字段/依赖和平台机械校验。
+2. 运行 design_ir、lock、项目字段/依赖和平台机械校验，并用
+   `design_spec_linter.py` 检查人类文档与需求追踪。
 3. 按 `agents/verification-orchestrator.md` 调用 Agent 1/2，运行 `validate-agent-output.py`，再由 `verification_merge.py` 原子写入 Agent gates 与顶层 `verification`。
 4. 任一格式或语义失败都必须阻断；修正后重验，禁止手工把 gate 改为 pass。
 5. gates 通过后运行 `lock_to_contract.py`，从 lock 逐个派生

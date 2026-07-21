@@ -19,7 +19,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "const": "1.1"
     },
     "agent_id": {
       "enum": [
@@ -391,7 +391,8 @@
             "timeline",
             "naming_and_fields",
             "logic",
-            "signals"
+            "signals",
+            "completeness"
           ],
           "additionalProperties": false,
           "properties": {
@@ -408,6 +409,9 @@
               "$ref": "#/$defs/checkResult"
             },
             "signals": {
+              "$ref": "#/$defs/checkResult"
+            },
+            "completeness": {
               "$ref": "#/$defs/checkResult"
             }
           }
@@ -427,17 +431,35 @@
           "items": {
             "type": "object",
             "required": [
+              "node_alias",
+              "workflow_name",
               "node_name",
               "node_type",
+              "type_id",
+              "action_id",
               "checks"
             ],
             "additionalProperties": true,
             "properties": {
+              "node_alias": {
+                "type": "string",
+                "minLength": 1
+              },
+              "workflow_name": {
+                "type": "string",
+                "minLength": 1
+              },
               "node_name": {
                 "type": "string"
               },
               "node_type": {
                 "type": "string"
+              },
+              "type_id": {
+                "type": "integer"
+              },
+              "action_id": {
+                "type": ["integer", "null"]
               },
               "checks": {
                 "type": "object",

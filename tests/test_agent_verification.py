@@ -66,6 +66,63 @@ class AgentOutputValidationTests(unittest.TestCase):
             result["semantic_failures"][0]["failure_code"],
         )
 
+    def test_agent1_cannot_pass_with_uncertain_completeness(self):
+        output = self.fixture("agent1-pass.json")
+        output["payload"]["sections"]["completeness"] = {
+            "result": "uncertain",
+            "detail": "需求尚未完整追踪",
+        }
+        result = VALIDATOR.validate_output(output)
+        self.assertEqual("fail", result["format_verdict"])
+        self.assertTrue(
+            any(
+                failure["code"] == "FORMAT_COMPLETENESS_NOT_PASS"
+                for failure in result["format_failures"]
+            )
+        )
+
+    def test_agent2_cannot_pass_with_uncertain_check(self):
+        output = self.fixture("agent2-pass.json")
+        output["payload"]["node_checks"][0]["checks"]["sub_mode"] = {
+            "result": "uncertain",
+            "detail": "缺少平台证据",
+        }
+        output["summary"] = {
+            "total_checks": 12,
+            "passed": 11,
+            "failed": 0,
+            "uncertain": 1,
+        }
+        result = VALIDATOR.validate_output(output)
+        self.assertEqual("fail", result["format_verdict"])
+        self.assertTrue(
+            any(
+                failure["code"] == "FORMAT_UNRESOLVED_AGENT_CHECK"
+                for failure in result["format_failures"]
+            )
+        )
+
+    def test_agent1_cannot_pass_with_any_uncertain_section(self):
+        output = self.fixture("agent1-pass.json")
+        output["payload"]["sections"]["logic"] = {
+            "result": "uncertain",
+            "detail": "分支证据不足",
+        }
+        output["summary"] = {
+            "total_checks": 6,
+            "passed": 5,
+            "failed": 0,
+            "uncertain": 1,
+        }
+        result = VALIDATOR.validate_output(output)
+        self.assertEqual("fail", result["format_verdict"])
+        self.assertTrue(
+            any(
+                failure["code"] == "FORMAT_UNRESOLVED_AGENT_CHECK"
+                for failure in result["format_failures"]
+            )
+        )
+
     def test_selftest_covers_pass_fail_and_invalid_cases(self):
         completed = subprocess.run(
             [
@@ -334,6 +391,101 @@ class AgentPrepareTests(unittest.TestCase):
                     str(lock_path),
                     str(validator_path),
                 )
+
+    def test_prepare_only_keeps_manifest_workflows_touching_target_sheets(self):
+        lock = {
+            "meta": {"project": "测试"},
+            "workflows": [{"trigger_sheet": "采购需求", "node_chain": []}],
+            "associations": [],
+            "gates": {},
+        }
+        digest = PREPARE.compute_lock_digest(lock)
+        manifest = {
+            "tables": {
+                "采购需求": [
+                    {
+                        "pid": "pid-hit",
+                        "wf": "更新采购",
+                        "r": ["采购需求"],
+                        "w": ["采购需求"],
+                    }
+                ],
+                "无关表": [
+                    {
+                        "pid": "pid-miss",
+                        "wf": "无关流程",
+                        "r": ["无关表"],
+                        "w": ["无关表"],
+                    }
+                ],
+            }
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = Path(temp_dir) / "lock.json"
+            validator_path = Path(temp_dir) / "validator.json"
+            manifest_path = Path(temp_dir) / "manifest.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            validator_path.write_text(
+                json.dumps(
+                    {
+                        "overall_verdict": "pass",
+                        "input_digest": digest,
+                        "results": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            brief = PREPARE.prepare_brief(
+                str(lock_path),
+                str(validator_path),
+                str(manifest_path),
+            )
+        scoped = brief["deterministic_evidence"]["manifest_scope"]["workflows"]
+        self.assertEqual(["pid-hit"], [item["pid"] for item in scoped])
+
+    def test_prepare_canonicalizes_legacy_node_ids(self):
+        lock = {
+            "meta": {"project": "测试"},
+            "workflows": [
+                {
+                    "name": "旧格式流程",
+                    "node_chain": [
+                        {
+                            "alias": "legacy",
+                            "name": "旧节点",
+                            "node_type": "update_record",
+                            "typeId": "6",
+                            "actionId": "2",
+                        }
+                    ],
+                }
+            ],
+            "associations": [],
+            "gates": {},
+        }
+        digest = PREPARE.compute_lock_digest(lock)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = Path(temp_dir) / "lock.json"
+            validator_path = Path(temp_dir) / "validator.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            validator_path.write_text(
+                json.dumps(
+                    {
+                        "overall_verdict": "pass",
+                        "input_digest": digest,
+                        "results": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            brief = PREPARE.prepare_brief(
+                str(lock_path),
+                str(validator_path),
+            )
+        node = brief["workflows"][0]["node_chain"][0]
+        self.assertEqual(6, node["type_id"])
+        self.assertEqual(2, node["action_id"])
 
 
 if __name__ == "__main__":

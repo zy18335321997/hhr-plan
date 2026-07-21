@@ -82,10 +82,12 @@
 | 子流程循环调用 | A 调 B 调 C 调 A → fail | |
 
 **并发触发冲突检查方法**:
-查 manifest 同一表的所有工作流 → 找触发类型=工作表事件的 → 如果多个事件工作流监听同一字段变更 → 标注 concurrent_trigger_risk
+查 brief 的 `deterministic_evidence.manifest_scope` → 找触发类型=工作表事件的 →
+如果多个事件工作流监听同一字段变更 → 标注 concurrent_trigger_risk
 
 **数据竞态检查方法**:
-查 manifest → 如果两个工作流的写列表有交集 → 且两者都可能被同一操作间接触发 → 标注 write_conflict_risk
+查 brief 的 `deterministic_evidence.manifest_scope` → 如果两个工作流的写列表有交集
+→ 且两者都可能被同一操作间接触发 → 标注 write_conflict_risk
 
 ---
 
@@ -97,7 +99,7 @@
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "agent_id": "agent_2_platform",
   "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
   "verdict": "pass",
@@ -113,8 +115,12 @@
   "payload": {
     "node_checks": [
       {
+        "node_alias": "update_status",
+        "workflow_name": "提交采购需求",
         "node_name": "节点名",
         "node_type": "类型+typeId",
+        "type_id": 6,
+        "action_id": 2,
         "checks": {
           "type_exists": {"result": "pass", "detail": ""},
           "sub_mode": {"result": "pass", "detail": ""},
@@ -146,6 +152,8 @@
 - `summary.total_checks` 必须严格等于 `passed + failed + uncertain`
 - `input_digest` 必须原样复制 Agent brief 中绑定本次 lock 的 64 位 SHA-256
 - `node_checks` 和 `topology_checks` 必须放在 `payload` 中，不得移动到 envelope 顶级
+- `node_checks[].workflow_name/node_alias/type_id/action_id` 必须原样复制 brief；
+  不同工作流中的同 alias、同名节点或错误类型不能互相替代
 
 **fix_guide 分组规则**:
 - `easy`: 参数值修改（子模式选错、获取模式切换）— 改一个配置字段即可

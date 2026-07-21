@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,24 @@ class SkillDiscoveryPathTests(unittest.TestCase):
 
         self.assertEqual(2, len(violations))
         self.assertTrue(all(item["severity"] == "high" for item in violations))
+
+
+class PatternIndexTests(unittest.TestCase):
+    def test_indexed_patterns_have_files(self):
+        pattern_root = ROOT / "references" / "patterns"
+        missing = []
+        for index_path in pattern_root.glob("*/_index.md"):
+            text = index_path.read_text(encoding="utf-8")
+            names = re.findall(
+                r"^\|[^|\n]+\|\s*`([a-z][a-z0-9-]+)`\s*\|",
+                text,
+                re.MULTILINE,
+            )
+            for name in names:
+                path = index_path.parent / f"{name}.md"
+                if not path.is_file():
+                    missing.append(str(path.relative_to(ROOT)))
+        self.assertEqual([], missing)
 
 
 if __name__ == "__main__":

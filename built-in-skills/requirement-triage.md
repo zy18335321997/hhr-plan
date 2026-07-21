@@ -20,6 +20,45 @@
 | 确认后做 | 中高复杂度或有影响面 → 标注风险后确认 |
 | 不做 | 说明原因 + 替代方案（更简单的方式/已有方案可覆盖） |
 
+## 结构化输出
+
+筛选通过后必须先输出 `design_ir` 的输入合同，不直接跳到表和工作流：
+
+```json
+{
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "statement": "保留客户原话",
+      "priority": "must",
+      "acceptance_criteria": ["可观察结果"]
+    }
+  ],
+  "actors": [{"id": "ACT-001", "name": "角色", "responsibilities": ["职责"]}],
+  "scenarios": [
+    {
+      "id": "SCN-001",
+      "actor_ids": ["ACT-001"],
+      "trigger": "触发",
+      "outcome": "结果",
+      "exceptions": ["退回或异常"]
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "ASM-001",
+      "statement": "尚未确认的规则",
+      "confidence": "LOW",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+- 客户明确说出的内容写入 requirements，不得降级为 assumptions。
+- Agent 补充的行业惯例只能写入 assumptions，不能伪装成已确认需求。
+- 缺少平台 ID 不阻止业务 IR 展开；只阻止执行锁进入可执行状态。
+
 ## 复杂度估算
 
 - **低**: 新增 ≤2 表, ≤3 流, 单模块

@@ -35,6 +35,8 @@ interface:
     - hap-bridge wf-nodes --raw
     - scripts/agent_prepare.py
     - scripts/contract_compat.py
+    - scripts/design_ir_validator.py
+    - scripts/design_spec_linter.py
     - scripts/design_validator.py
     - scripts/verify-platform.py
     - scripts/validate-agent-output.py
@@ -47,7 +49,7 @@ interface:
     - execution_lock.json
   verification:
     schema: "references/schemas/agent-verification-output.schema.json"
-    primary: "Agent 1 (逻辑: 5-section, 含时序校验)"
+    primary: "Agent 1 (逻辑: 6-section, 含时序与客户需求完整度)"
     secondary: "Agent 2 (平台: 节点类型+数据链路+拓扑)"
     command: "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design"
     gate: "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"

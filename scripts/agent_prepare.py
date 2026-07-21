@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 DESIGN_AGENT_IDS = ("agent_1_logic", "agent_2_platform")
 BASIC_GATE_NAMES = {
     "gate_1_dependency",
@@ -59,6 +59,15 @@ def compute_file_digest(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _canonical_int(node: dict, canonical: str, legacy: str):
+    value = node.get(canonical)
+    if value is None:
+        value = node.get(legacy)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return value
+
+
 def load_validator_evidence(
     validator_result_path: str,
     expected_digest: str,
@@ -82,7 +91,66 @@ def load_validator_evidence(
     }
 
 
-def prepare_brief(lock_path: str, validator_result_path: str) -> dict:
+def _manifest_scope(lock: dict, manifest_path: str | None) -> dict:
+    if not manifest_path:
+        return {"source": None, "workflows": []}
+    with open(manifest_path, encoding="utf-8") as file:
+        manifest = json.load(file)
+    target_sheets = {
+        workflow.get("trigger_sheet")
+        for workflow in lock.get("workflows", [])
+        if isinstance(workflow, dict) and workflow.get("trigger_sheet")
+    }
+    for association in lock.get("associations", []):
+        if isinstance(association, dict):
+            target_sheets.update(
+                sheet
+                for sheet in (
+                    association.get("from_sheet"),
+                    association.get("to_sheet"),
+                )
+                if sheet
+            )
+    scoped = []
+    seen = set()
+    for grouped_sheet, workflows in manifest.get("tables", {}).items():
+        for workflow in workflows:
+            if not isinstance(workflow, dict):
+                continue
+            reads = workflow.get("r", []) or workflow.get("reads", []) or []
+            writes = workflow.get("w", []) or workflow.get("writes", []) or []
+            if (
+                grouped_sheet not in target_sheets
+                and not target_sheets.intersection(reads)
+                and not target_sheets.intersection(writes)
+            ):
+                continue
+            pid = workflow.get("pid", "")
+            signature = pid or workflow.get("wf") or workflow.get("name")
+            if signature in seen:
+                continue
+            seen.add(signature)
+            scoped.append(
+                {
+                    "pid": pid,
+                    "name": workflow.get("wf") or workflow.get("name", ""),
+                    "trigger": workflow.get("trigger", ""),
+                    "reads": reads,
+                    "writes": writes,
+                }
+            )
+    return {
+        "source": manifest_path,
+        "target_sheets": sorted(target_sheets),
+        "workflows": scoped,
+    }
+
+
+def prepare_brief(
+    lock_path: str,
+    validator_result_path: str,
+    manifest_path: str | None = None,
+) -> dict:
     """Extract only what agents need from execution_lock.json."""
     with open(lock_path, encoding="utf-8") as f:
         lock = json.load(f)
@@ -99,6 +167,7 @@ def prepare_brief(lock_path: str, validator_result_path: str) -> dict:
         "input_digest": input_digest,
         "deterministic_evidence": {
             "design_validator": validator_evidence,
+            "manifest_scope": _manifest_scope(lock, manifest_path),
         },
         "verification_contract": {
             "schema_version": SCHEMA_VERSION,
@@ -123,6 +192,7 @@ def prepare_brief(lock_path: str, validator_result_path: str) -> dict:
             "axioms_covered": lock.get("meta", {}).get("axioms_covered", []),
         },
         "naming": lock.get("naming", {}),
+        "design_ir": copy.deepcopy(lock.get("design_ir", {})),
         # Sheets — only names, is_hub, and field names (agents don't need full config)
         "sheets": [],
         # Associations — full (needed for cycle detection)
@@ -154,10 +224,11 @@ def prepare_brief(lock_path: str, validator_result_path: str) -> dict:
         for n in wf.get("node_chain", []):
             node_chain_slim.append({
                 "index": n.get("index", ""),
+                "alias": n.get("alias", ""),
                 "node_name": n.get("node_name", n.get("name", "")),
                 "node_type": n.get("node_type", ""),
-                "type_id": n.get("type_id"),
-                "action_id": n.get("action_id"),
+                "type_id": _canonical_int(n, "type_id", "typeId"),
+                "action_id": _canonical_int(n, "action_id", "actionId"),
                 "sub_mode": n.get("sub_mode"),
                 "target_sheet": n.get("target_sheet"),
                 "writes_fields": n.get("writes_fields", []),
@@ -191,11 +262,19 @@ def main():
         required=True,
         help="与当前 lock 摘要绑定且 verdict=pass 的 design_validator JSON",
     )
+    parser.add_argument(
+        "--manifest",
+        help="可选 business-flow-manifest.json；只压缩与本次涉事表有关的工作流",
+    )
     parser.add_argument("--output", default=None, help="输出路径（默认 stdout）")
     args = parser.parse_args()
 
     try:
-        brief = prepare_brief(args.lock_path, args.validator_result)
+        brief = prepare_brief(
+            args.lock_path,
+            args.validator_result,
+            args.manifest,
+        )
     except FileNotFoundError as exc:
         print(
             json.dumps(

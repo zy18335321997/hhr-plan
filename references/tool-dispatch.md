@@ -23,7 +23,7 @@
   第 1 轮 — 4 条命令并行（全部本地，秒返）:
   ┌─ search.py "XX" --type workflow -p <项目名>         → PID + 触发表 + 节点数
   ├─ search.py "XX" --exact-name -p <项目名>              → 精确匹配
-  ├─ rebuild_graph.py <项目名> --lifecycle <表名>          → 创建者/更新者/消费者
+  ├─ rebuild_graph.py <项目名> --lifecycle <表名>          → 只读现有图，查创建者/更新者/消费者
   └─ search.py "表名" --writes-to -p <项目名>              → 上游 + 下游
         --reads-from -p <项目名>
 
@@ -66,8 +66,8 @@
 
 | 需要 | 命令 |
 |------|------|
-| 实体生命周期 | `python3 $SKILL/rebuild_graph.py <项目名> --lifecycle <表名>` |
-| 重建索引+图 | `python3 $SKILL/auto_sync.py` |
+| 实体生命周期 | `python3 $SKILL/rebuild_graph.py <项目名> --lifecycle <表名>`（不重建、不写文件） |
+| 重建索引+图 | `python3 $SKILL/auto_sync.py <项目名>`（只同步 stale 项目） |
 
 ## 节点获取（wf_fetch.py 一站式）
 

@@ -30,7 +30,7 @@
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "agent_id": "agent_3_audit",
   "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
   "verdict": "pass",

@@ -227,7 +227,10 @@
 ```
 □ 方案引用的每个字段名在工作表中存在？（查 project_context / worksheetContext）
 □ 方案引用的每个工作表名存在？
-□ 选项值在字段的 options 中存在？（用中文 value，不是 key）
+□ 选项引用同时包含 `{key, label}`，且 key/label 与字段 options 一致？
+  - 设计文档展示 label
+  - execution_lock 保存 key+label
+  - execution_contract 和 HAP CLI 只消费 key
 □ 新表名/工作流名/按钮名不与已有名称重复？
 □ 新编号前缀不与已有前缀冲突？
 ```
@@ -268,7 +271,8 @@
 □ 字段引用 → kind: "field", 必须带 node + fieldId（真实 24 位十六进制 ID，严禁 alias）
 □ 系统字段 → kind: "systemField", 只能 fieldId, 不能带 node
   - nowTime / triggertime / triggeraid
-□ 固定值   → kind: "literal", value 为中文选项名（非 UUID key）
+□ 普通固定值 → kind: "literal", value 为原始值
+□ 选项固定值 → execution_lock 使用 `{key, label}`；转换后 value 必须是 option key
 □ 整条记录 → kind: "record", node 指向触发记录或查询节点
 □ 模板     → kind: "template", value 含 $nodeAlias-fieldId$ 或 $system-fieldId$
 □ 空值     → kind: "empty"

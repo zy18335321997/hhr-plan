@@ -10,7 +10,7 @@ Usage:
 
 Called by:
     - extract-project.py (after extraction)
-    - hhr-plan skill startup (before loading context)
+    - explicit repair/sync when doctor or freshness checks report stale data
 """
 
 import json
@@ -32,16 +32,36 @@ def file_mtime(path):
         return 0
 
 
-def sources_mtime(project_name):
+def sources_mtime(project_name, project_path=None):
     """Get the newest modification time among all source files for a project."""
-    proj_dir = os.path.join(BASE, project_name)
+    proj_dir = project_path or os.path.join(BASE, project_name)
     sources = [
         os.path.join(proj_dir, "_node_data.json"),
+        os.path.join(proj_dir, "nodes.json"),
+        os.path.join(proj_dir, "_all_workflows.json"),
         os.path.join(proj_dir, "business-flow-manifest.json"),
         os.path.join(proj_dir, "project_context.json"),
         os.path.join(proj_dir, "aliases.json"),
     ]
     return max(file_mtime(p) for p in sources)
+
+
+def node_sources_mtime(project_name, project_path=None):
+    """Newest raw input used to derive _node_data.json."""
+    proj_dir = project_path or os.path.join(BASE, project_name)
+    sources = [
+        os.path.join(proj_dir, "nodes.json"),
+        os.path.join(proj_dir, "_all_workflows.json"),
+        os.path.join(proj_dir, "business-flow-manifest.json"),
+        os.path.join(proj_dir, "project_context.json"),
+    ]
+    return max(file_mtime(path) for path in sources)
+
+
+def check_node_data(project_name, project_path=None):
+    proj_dir = project_path or os.path.join(BASE, project_name)
+    node_data = os.path.join(proj_dir, "_node_data.json")
+    return node_sources_mtime(project_name, proj_dir) > file_mtime(node_data)
 
 
 def discover_projects(project_name=None):
@@ -65,59 +85,85 @@ def discover_projects(project_name=None):
 
 
 def check_index(projects):
-    """Check if search index needs rebuild (freshness + completeness). Returns list of stale project names."""
-    index_mtime = file_mtime(INDEX_DB)
-    if index_mtime == 0:
+    """Check per-project source mtime and completeness in the shared index."""
+    if file_mtime(INDEX_DB) == 0:
         return [p[0] for p in projects]  # no index exists
 
     stale = []
-    for proj_name, _ in projects:
-        src_time = sources_mtime(proj_name)
-        if src_time > index_mtime:
-            stale.append(proj_name)
-
-    # Completeness check: verify each project has entries in the index
-    if not stale:
-        import sqlite3
-        try:
-            conn = sqlite3.connect(f"file:{INDEX_DB}?mode=ro", uri=True)
-            for proj_name, _ in projects:
-                cnt = conn.execute(
-                    "SELECT COUNT(*) FROM search_fts WHERE project=?", (proj_name,)
-                ).fetchone()[0]
-                if cnt == 0:
-                    stale.append(proj_name)
+    import sqlite3
+    try:
+        conn = sqlite3.connect(f"file:{INDEX_DB}?mode=ro", uri=True)
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(projects)")
+        }
+        if "source_mtime" not in columns:
             conn.close()
-        except Exception:
-            pass  # if DB is unreadable, fall through to stale list from mtime check
+            return [p[0] for p in projects]
+        for proj_name, proj_path in projects:
+            row = conn.execute(
+                "SELECT source_mtime FROM projects WHERE name=?",
+                (proj_name,),
+            ).fetchone()
+            count = conn.execute(
+                "SELECT COUNT(*) FROM search_fts WHERE project=?",
+                (proj_name,),
+            ).fetchone()[0]
+            if (
+                row is None
+                or sources_mtime(proj_name, proj_path) > float(row[0] or 0)
+                or count == 0
+            ):
+                stale.append(proj_name)
+        conn.close()
+    except Exception:
+        return [p[0] for p in projects]
 
     return stale
 
 
-def check_graph(project_name):
+def check_graph(project_name, project_path=None):
     """Check if dependency graph needs rebuild."""
-    graph_path = os.path.join(BASE, project_name, "dependency_graph.json")
+    proj_dir = project_path or os.path.join(BASE, project_name)
+    graph_path = os.path.join(proj_dir, "dependency_graph.json")
     graph_mtime = file_mtime(graph_path)
-    src_time = sources_mtime(project_name)
+    src_time = sources_mtime(project_name, proj_dir)
     return src_time > graph_mtime
 
 
 def rebuild_index(stale_projects=None, all_projects=False):
     """Rebuild search index with build_search_index.py."""
     script = os.path.join(SKILL_DIR, "build_search_index.py")
-    if all_projects or stale_projects:
-        label = "all projects" if all_projects else f"stale: {stale_projects}"
+    if all_projects:
+        label = "all projects"
         print(f"[sync] Rebuilding search index ({label})...")
         subprocess.run([sys.executable, script, "--all"], check=True)
+    elif stale_projects:
+        print(f"[sync] Rebuilding search index (stale: {stale_projects})...")
+        for project_name in stale_projects:
+            subprocess.run([sys.executable, script, project_name], check=True)
     else:
         print("[sync] Search index is up to date.")
 
 
-def rebuild_graph(project_name):
+def rebuild_graph(project_name, project_path=None):
     """Rebuild dependency graph with rebuild_graph.py."""
     script = os.path.join(SKILL_DIR, "rebuild_graph.py")
     print(f"[sync] Rebuilding dependency graph for: {project_name}")
-    subprocess.run([sys.executable, script, project_name], check=True)
+    command = [sys.executable, script, project_name]
+    if project_path:
+        command.extend(["--project-path", project_path])
+    subprocess.run(command, check=True)
+
+
+def rebuild_node_data(stale_projects, project_paths=None):
+    """Force-regenerate only stale node-data projects."""
+    script = os.path.join(SKILL_DIR, "generate_node_data.py")
+    for project_name in stale_projects:
+        command = [sys.executable, script, project_name, "--force"]
+        project_path = (project_paths or {}).get(project_name)
+        if project_path:
+            command.extend(["--project-path", project_path])
+        subprocess.run(command, check=True)
 
 
 def main():
@@ -133,22 +179,36 @@ def main():
         print("[sync] No projects found.")
         return
 
-    # ── Step 1: Check index freshness ──
+    # ── Step 1: Check derived node data ──
+    stale_node_data = [
+        proj_name
+        for proj_name, proj_path in projects
+        if check_node_data(proj_name, proj_path)
+    ]
+    # Index/graph freshness is recomputed after node-data generation.
     stale_index = check_index(projects)
     stale_graphs = []
-    for proj_name, _ in projects:
-        if check_graph(proj_name):
+    for proj_name, proj_path in projects:
+        if check_graph(proj_name, proj_path):
             stale_graphs.append(proj_name)
 
     if check_only:
         print("[sync] --check-only mode")
+        print(f"  Node data stale projects: {stale_node_data or 'none'}")
         print(f"  Index stale projects: {stale_index or 'none'}")
         print(f"  Graph stale projects: {stale_graphs or 'none'}")
         return
 
-    # ── Step 2: Ensure _node_data.json exists for all projects ──
-    gen_script = os.path.join(SKILL_DIR, "generate_node_data.py")
-    subprocess.run([sys.executable, gen_script, "--all"], check=False)
+    # ── Step 2: Generate only stale _node_data.json ──
+    project_paths = dict(projects)
+    rebuild_node_data(stale_node_data, project_paths)
+
+    stale_index = check_index(projects)
+    stale_graphs = [
+        proj_name
+        for proj_name, proj_path in projects
+        if check_graph(proj_name, proj_path)
+    ]
 
     # ── Step 3: Rebuild what's stale ──
     rebuilt_any = False
@@ -160,15 +220,19 @@ def main():
         print("[sync] Search index is up to date.")
 
     for proj_name in stale_graphs:
-        rebuild_graph(proj_name)
+        rebuild_graph(proj_name, project_paths.get(proj_name))
         rebuilt_any = True
     if not stale_graphs:
         print(f"[sync] Dependency graphs are up to date.")
 
     if rebuilt_any:
-        # Regenerate project-scoped topology documents.
+        # Regenerate only topology documents whose graph changed.
         topo_script = os.path.join(SKILL_DIR, "generate_topology.py")
-        subprocess.run([sys.executable, topo_script, "--all"], check=False)
+        for proj_name in stale_graphs:
+            subprocess.run(
+                [sys.executable, topo_script, proj_name],
+                check=False,
+            )
 
         print()
         print("[sync] ✓ Derived data synced.")

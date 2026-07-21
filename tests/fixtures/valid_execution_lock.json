@@ -1,6 +1,6 @@
 {
   "meta": {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "source_design": "design_spec.md",
     "project": "测试项目",
     "mode": "A",
@@ -20,6 +20,123 @@
     "bool_field_prefix": "是否",
     "field_ordering": ["身份标识", "业务属性", "关联引用", "计算汇总"]
   },
+  "design_ir": {
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "statement": "申请人提交采购需求后状态变为已提交",
+        "priority": "must",
+        "acceptance_criteria": ["点击提交后状态准确更新"]
+      }
+    ],
+    "actors": [
+      {
+        "id": "ACT-APPLICANT",
+        "name": "申请人",
+        "interactive": true,
+        "responsibilities": ["填写并提交采购需求"]
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "SCN-SUBMIT",
+        "name": "提交采购需求",
+        "actor_ids": ["ACT-APPLICANT"],
+        "trigger": "申请人点击提交",
+        "outcome": "采购需求进入已提交状态",
+        "exceptions": ["字段不完整时不允许提交"]
+      }
+    ],
+    "entities": [
+      {
+        "id": "ENT-PURCHASE",
+        "name": "采购需求",
+        "responsibility": "记录采购申请及其生命周期",
+        "table_name": "采购需求",
+        "field_dimensions": {
+          "identity": ["采购需求编号"],
+          "business": ["采购内容"],
+          "status": ["状态"],
+          "time": ["提交时间"],
+          "ownership": ["申请人"],
+          "relations": [],
+          "audit": ["创建时间"]
+        }
+      }
+    ],
+    "state_machines": [
+      {
+        "id": "SM-PURCHASE",
+        "entity_id": "ENT-PURCHASE",
+        "state_field_id": "field-status",
+        "states": [
+          {"key": "draft", "label": "草稿", "terminal": false},
+          {"key": "submitted", "label": "已提交", "terminal": true}
+        ],
+        "transitions": [
+          {
+            "id": "TR-SUBMIT",
+            "from": "draft",
+            "to": "submitted",
+            "trigger": "按钮：提交",
+            "actor_id": "ACT-APPLICANT",
+            "guard": "必填字段完整",
+            "workflow": "提交采购需求"
+          }
+        ]
+      }
+    ],
+    "business_rules": [
+      {
+        "id": "RULE-001",
+        "statement": "只有草稿状态允许提交",
+        "enforcement": "按钮显示条件与工作流前置条件"
+      }
+    ],
+    "permissions": [
+      {
+        "actor_id": "ACT-APPLICANT",
+        "table": "采购需求",
+        "actions": ["create", "read", "update"],
+        "row_scope": "本人创建"
+      }
+    ],
+    "views": [
+      {
+        "id": "VIEW-MY-PURCHASE",
+        "actor_id": "ACT-APPLICANT",
+        "name": "我的采购需求",
+        "table": "采购需求",
+        "fields": ["状态"],
+        "filter": "申请人=当前用户",
+        "sort": "创建时间 desc"
+      }
+    ],
+    "buttons": [
+      {
+        "id": "BTN-SUBMIT",
+        "actor_ids": ["ACT-APPLICANT"],
+        "table": "采购需求",
+        "label": "提交",
+        "visible_when": "状态=草稿",
+        "workflow": "提交采购需求"
+      }
+    ],
+    "notifications": [],
+    "assumptions": [],
+    "traceability": [
+      {
+        "requirement_id": "REQ-001",
+        "artifacts": [
+          {"kind": "entity", "ref": "ENT-PURCHASE"},
+          {"kind": "state_machine", "ref": "SM-PURCHASE"},
+          {"kind": "workflow", "ref": "提交采购需求"},
+          {"kind": "button", "ref": "BTN-SUBMIT"},
+          {"kind": "view", "ref": "VIEW-MY-PURCHASE"}
+        ]
+      }
+    ]
+  },
   "sheets": [
     {
       "name": "采购需求",
@@ -31,8 +148,21 @@
         {
           "name": "状态",
           "field_id": "field-status",
-          "type": "Text",
-          "default_value": "draft",
+          "type": "SingleSelect",
+          "options": [
+            {
+              "key": "11111111-1111-1111-1111-111111111111",
+              "label": "草稿"
+            },
+            {
+              "key": "22222222-2222-2222-2222-222222222222",
+              "label": "已提交"
+            }
+          ],
+          "default_value": {
+            "key": "11111111-1111-1111-1111-111111111111",
+            "label": "草稿"
+          },
           "required": true,
           "unique": false,
           "axiom_ref": "公理3",
@@ -86,7 +216,10 @@
             "fields": [
               {
                 "fieldId": "field-status",
-                "value": "submitted"
+                "value": {
+                  "key": "22222222-2222-2222-2222-222222222222",
+                  "label": "已提交"
+                }
               }
             ]
           }
@@ -98,7 +231,16 @@
           "worksheet_id": "ws-purchase",
           "field_name": "状态",
           "type": "SingleSelect",
-          "expected_options": ["草稿", "已提交"]
+          "expected_options": [
+            {
+              "key": "11111111-1111-1111-1111-111111111111",
+              "label": "草稿"
+            },
+            {
+              "key": "22222222-2222-2222-2222-222222222222",
+              "label": "已提交"
+            }
+          ]
         }
       ],
       "dependencies": {
@@ -119,15 +261,15 @@
     "agent_2_platform": {"result": "pass"}
   },
   "verification": {
-    "input_digest": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c",
+    "input_digest": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880",
     "verification_agents": {
-      "schema_version": "1.0",
+      "schema_version": "1.1",
       "completeness": "pass",
       "semantic_verdict": "pass",
       "agents": ["agent_1_logic", "agent_2_platform"],
       "agent_input_digests": {
-        "agent_1_logic": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c",
-        "agent_2_platform": "02eea5c42ac03ab72ae89f61263cef9f317578bf673eea44ef818909e808316c"
+        "agent_1_logic": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880",
+        "agent_2_platform": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880"
       }
     },
     "fix_plan": {

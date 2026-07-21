@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-21T09:39:46.572532+00:00",
+  "generated_at": "2026-07-21T14:05:42.508528+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -65,7 +65,7 @@
         "schema": "references/schemas/agent-verification-output.schema.json",
         "command": "python3 scripts/validate-agent-output.py --agent1 <output.json>"
       },
-      "pipeline": "读取独立上下文→完成五部分累积检查→输出统一 envelope",
+      "pipeline": "读取独立上下文→完成六部分累积检查→输出统一 envelope",
       "references": [
         "agents/logic-verify.md",
         "references/schemas/verification-failure-codes.md"
@@ -106,6 +106,8 @@
       "tools": [
         "scripts/agent_prepare.py",
         "scripts/contract_compat.py",
+        "scripts/design_ir_validator.py",
+        "scripts/design_spec_linter.py",
         "scripts/design_validator.py",
         "scripts/lock_manager.py",
         "scripts/verify-platform.py",
@@ -122,7 +124,7 @@
       ],
       "verification": {
         "schema": "references/schemas/agent-verification-output.schema.json",
-        "primary": "Agent 1 (逻辑: 5-section 公理+时序+命名+逻辑+信号)",
+        "primary": "Agent 1 (逻辑: 6-section 公理+时序+命名+逻辑+信号+完整度)",
         "secondary": "Agent 2 (平台: 节点类型+子模式+上限+拓扑)",
         "command": "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design",
         "gate": "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
@@ -183,6 +185,8 @@
         "hap-bridge wf-nodes --raw",
         "scripts/agent_prepare.py",
         "scripts/contract_compat.py",
+        "scripts/design_ir_validator.py",
+        "scripts/design_spec_linter.py",
         "scripts/design_validator.py",
         "scripts/verify-platform.py",
         "scripts/validate-agent-output.py",
@@ -197,7 +201,7 @@
       ],
       "verification": {
         "schema": "references/schemas/agent-verification-output.schema.json",
-        "primary": "Agent 1 (逻辑: 5-section, 含时序校验)",
+        "primary": "Agent 1 (逻辑: 6-section, 含时序与客户需求完整度)",
         "secondary": "Agent 2 (平台: 节点类型+数据链路+拓扑)",
         "command": "python3 scripts/validate-agent-output.py --agent1 <agent1.json> --agent2 <agent2.json> && python3 scripts/verification_merge.py --target <execution_lock.json> --agent1 <agent1.json> --agent2 <agent2.json> --mode design",
         "gate": "格式或语义任一失败均阻断；通过后才允许 lock_to_contract"
@@ -486,6 +490,7 @@
       "description": "Agent 上下文预处理器 — 从 execution_lock.json 生成只读校验摘要。",
       "arguments": [
         "--validator-result",
+        "--manifest",
         "--output"
       ]
     },
@@ -526,6 +531,16 @@
       "arguments": [
         "--quiet",
         "--all-projects"
+      ]
+    },
+    "design_ir_validator.py": {
+      "description": "Validate the business design IR embedded in execution_lock.json.",
+      "arguments": []
+    },
+    "design_spec_linter.py": {
+      "description": "Lint a human design_spec.md against execution_lock.design_ir.",
+      "arguments": [
+        "--lock-file"
       ]
     },
     "design_validator.py": {

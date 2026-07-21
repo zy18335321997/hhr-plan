@@ -54,10 +54,10 @@ patterns/
 
 | 目录 | 模式数 | 自动选择表 | 几建证据 |
 |------|--------|----------|---------|
-| `approval/` | 4 | 审批单人→single-sign / 多级→multi-level / 条件→conditional / 退回→retreat-refill | 65个审批流 |
-| `trigger/` | 3 | 人工决策→button / 数据级联→event / 复用逻辑→subprocess | 338个流全量 |
-| `notification/` | 1+ | 审批结果→approval-result / 任务分配→task-assignment / 告警→alert-escalation | 512个CRUD映射 |
-| `data-validation/` | 3 | 去重→dedup-check / 主子→parent-child / 非空→required-field | 241个空处理节点 |
+| `approval/` | 6 | 审批单人→single-sign / 多级→multi-level / 条件→conditional / 退回→retreat-refill | 65个审批流 |
+| `trigger/` | 6 | 人工决策→button / 数据级联→event / 复用逻辑→subprocess | 338个流全量 |
+| `notification/` | 6 | 审批结果→approval-result / 任务分配→task-assignment / 告警→alert-escalation | 512个CRUD映射 |
+| `data-validation/` | 6 | 去重→dedup-check / 主子→parent-child / 非空→required-field | 241个空处理节点 |
 
 ### 加载顺序
 

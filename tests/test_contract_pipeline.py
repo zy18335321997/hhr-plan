@@ -30,6 +30,15 @@ def load_fixture(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def refresh_verification_digest(lock):
+    digest = agent_prepare.compute_lock_digest(lock)
+    lock["verification"]["input_digest"] = digest
+    lock["verification"]["verification_agents"]["agent_input_digests"] = {
+        "agent_1_logic": digest,
+        "agent_2_platform": digest,
+    }
+
+
 def run_script(name, *args):
     return subprocess.run(
         [sys.executable, str(SCRIPTS / name), *map(str, args)],
@@ -97,8 +106,8 @@ class ContractPipelineTests(unittest.TestCase):
         agent1["verdict"] = "fail"
         agent1["failure_code"] = "A1_LOGIC_FAILED"
         agent1["summary"] = {
-            "total_checks": 5,
-            "passed": 4,
+            "total_checks": 6,
+            "passed": 5,
             "failed": 1,
             "uncertain": 0,
         }
@@ -131,6 +140,79 @@ class ContractPipelineTests(unittest.TestCase):
         with self.assertRaises(ConversionError):
             convert_lock(merged)
 
+    def test_agent2_node_aliases_must_match_lock_exactly(self):
+        lock = copy.deepcopy(self.lock)
+        lock.pop("verification")
+        lock["gates"].pop("agent_1_logic")
+        lock["gates"].pop("agent_2_platform")
+        digest = agent_prepare.compute_lock_digest(lock)
+        agent1 = load_fixture("agent1-pass.json")
+        agent2 = load_fixture("agent2-pass.json")
+        agent1["input_digest"] = digest
+        agent2["input_digest"] = digest
+        agent2["payload"]["node_checks"][0]["node_alias"] = "wrong_alias"
+        with tempfile.TemporaryDirectory() as directory:
+            lock_path = Path(directory) / "lock.json"
+            agent1_path = Path(directory) / "agent1.json"
+            agent2_path = Path(directory) / "agent2.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            before = lock_path.read_bytes()
+            agent1_path.write_text(json.dumps(agent1), encoding="utf-8")
+            agent2_path.write_text(json.dumps(agent2), encoding="utf-8")
+            result, exit_code = verification_merge.run_merge(
+                lock_path,
+                [
+                    ("agent_1_logic", agent1_path),
+                    ("agent_2_platform", agent2_path),
+                ],
+                mode="design",
+            )
+            after = lock_path.read_bytes()
+        self.assertEqual(2, exit_code)
+        self.assertEqual(before, after)
+        self.assertTrue(
+            any(
+                failure["code"] == "FORMAT_AGENT_TARGET_MISMATCH"
+                for failure in result["format_failures"]
+            )
+        )
+
+    def test_agent2_identity_includes_workflow_name(self):
+        lock = copy.deepcopy(self.lock)
+        second = copy.deepcopy(lock["workflows"][0])
+        second["name"] = "第二采购流程"
+        lock["workflows"].append(second)
+        lock.pop("verification")
+        lock["gates"].pop("agent_1_logic")
+        lock["gates"].pop("agent_2_platform")
+        digest = agent_prepare.compute_lock_digest(lock)
+        agent1 = load_fixture("agent1-pass.json")
+        agent2 = load_fixture("agent2-pass.json")
+        agent1["input_digest"] = digest
+        agent2["input_digest"] = digest
+        with tempfile.TemporaryDirectory() as directory:
+            lock_path = Path(directory) / "lock.json"
+            agent1_path = Path(directory) / "agent1.json"
+            agent2_path = Path(directory) / "agent2.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            agent1_path.write_text(json.dumps(agent1), encoding="utf-8")
+            agent2_path.write_text(json.dumps(agent2), encoding="utf-8")
+            result, exit_code = verification_merge.run_merge(
+                lock_path,
+                [
+                    ("agent_1_logic", agent1_path),
+                    ("agent_2_platform", agent2_path),
+                ],
+                mode="design",
+            )
+        self.assertEqual(2, exit_code)
+        self.assertTrue(
+            any(
+                failure["code"] == "FORMAT_AGENT_TARGET_MISMATCH"
+                for failure in result["format_failures"]
+            )
+        )
+
     def test_pending_failed_or_missing_required_gate_blocks_conversion(self):
         cases = (
             ("gate_1_dependency", "pending"),
@@ -147,10 +229,25 @@ class ContractPipelineTests(unittest.TestCase):
                 with self.assertRaises(ConversionError):
                     convert_lock(invalid)
 
+    def test_top_level_digest_cannot_replay_old_agent_verdicts(self):
+        invalid = copy.deepcopy(self.lock)
+        invalid["workflows"][0]["node_chain"][0]["description"] = "设计已变化"
+        invalid["verification"]["input_digest"] = (
+            agent_prepare.compute_lock_digest(invalid)
+        )
+        with self.assertRaises(ConversionError) as raised:
+            convert_lock(invalid)
+        self.assertTrue(
+            any(
+                "必须重新运行 Agent" in error["detail"]
+                for error in raised.exception.errors
+            )
+        )
+
     def test_gate_three_may_be_not_applicable(self):
         lock = copy.deepcopy(self.lock)
         lock["gates"]["gate_3_timing"]["result"] = "n/a"
-        lock["verification"]["input_digest"] = agent_prepare.compute_lock_digest(lock)
+        refresh_verification_digest(lock)
         self.assertEqual("提交采购需求", convert_lock(lock)["meta"]["workflow_name"])
 
     @unittest.skipUnless(
@@ -176,9 +273,7 @@ class ContractPipelineTests(unittest.TestCase):
         node = legacy["workflows"][0]["node_chain"][0]
         node["typeId"] = str(node.pop("type_id"))
         node["actionId"] = str(node.pop("action_id"))
-        legacy["verification"]["input_digest"] = (
-            agent_prepare.compute_lock_digest(legacy)
-        )
+        refresh_verification_digest(legacy)
 
         contract = convert_lock(legacy)
 
@@ -226,14 +321,80 @@ class ContractPipelineTests(unittest.TestCase):
             paths,
         )
 
+    def test_option_label_without_key_is_rejected(self):
+        invalid = copy.deepcopy(self.lock)
+        invalid["workflows"][0]["node_chain"][0]["config"]["fields"][0][
+            "value"
+        ] = "已提交"
+        violations = contract_compat.validate_lock(invalid)
+        self.assertTrue(
+            any(
+                "必须是 {key, label}" in item["detail"]
+                for item in violations
+            )
+        )
+        with self.assertRaises(ConversionError):
+            convert_lock(invalid)
+
+    def test_single_select_rejects_array_and_mismatched_label(self):
+        array_value = copy.deepcopy(self.lock)
+        field_value = array_value["workflows"][0]["node_chain"][0]["config"][
+            "fields"
+        ][0]["value"]
+        array_value["workflows"][0]["node_chain"][0]["config"]["fields"][0][
+            "value"
+        ] = [field_value]
+        violations = contract_compat.validate_lock(array_value)
+        self.assertTrue(
+            any("不能使用数组" in item["detail"] for item in violations)
+        )
+
+        wrong_label = copy.deepcopy(self.lock)
+        wrong_label["workflows"][0]["node_chain"][0]["config"]["fields"][0][
+            "value"
+        ]["label"] = "草稿"
+        violations = contract_compat.validate_lock(wrong_label)
+        self.assertTrue(
+            any("label 与 key 不匹配" in item["detail"] for item in violations)
+        )
+
+    def test_field_reference_must_match_sheet_definition(self):
+        invalid = copy.deepcopy(self.lock)
+        invalid["workflows"][0]["field_references"][0][
+            "worksheet_id"
+        ] = "wrong-worksheet"
+        violations = contract_compat.validate_lock(invalid)
+        self.assertTrue(
+            any(
+                item["path"].endswith(".worksheet_id")
+                and "不一致" in item["detail"]
+                for item in violations
+            )
+        )
+
+    def test_relation_reference_requires_target_worksheet(self):
+        invalid = copy.deepcopy(self.lock)
+        field = invalid["sheets"][0]["fields"][0]
+        field["type"] = "Relation"
+        field.pop("options", None)
+        field.pop("default_value", None)
+        reference = invalid["workflows"][0]["field_references"][0]
+        reference["type"] = "Relation"
+        reference.pop("expected_options", None)
+        violations = contract_compat.validate_lock(invalid)
+        self.assertTrue(
+            any(
+                item["path"].endswith(".relation_worksheet_id")
+                for item in violations
+            )
+        )
+
     def test_multiple_workflows_require_explicit_selection(self):
         invalid = copy.deepcopy(self.lock)
         second = copy.deepcopy(invalid["workflows"][0])
         second["name"] = "第二工作流"
         invalid["workflows"].append(second)
-        invalid["verification"]["input_digest"] = (
-            agent_prepare.compute_lock_digest(invalid)
-        )
+        refresh_verification_digest(invalid)
 
         with self.assertRaises(ConversionError) as raised:
             convert_lock(invalid)

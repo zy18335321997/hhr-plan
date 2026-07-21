@@ -23,6 +23,7 @@ WORKSHEET_NODE_TYPES = {
     "delete_record",
 }
 PROCESS_NODE_TYPES = {"approval_block", "sub_process"}
+OPTION_FIELD_TYPES = {"SingleSelect", "MultiSelect", "Dropdown"}
 BASIC_GATES = {
     "gate_1_dependency": {"pass"},
     "gate_2_logic": {"pass"},
@@ -97,6 +98,39 @@ def _validate_conversion_gates(lock: dict, errors: list[dict]) -> None:
             "$.verification.input_digest",
             "verification 摘要与当前 execution_lock 设计内容不一致",
         )
+    if isinstance(agents, dict):
+        if agents.get("completeness") != "pass":
+            _error(
+                errors,
+                "$.verification.verification_agents.completeness",
+                "Agent 输出完整性必须为 pass",
+            )
+        required_agents = set(AGENT_GATES)
+        actual_agents = set(agents.get("agents", []))
+        if actual_agents != required_agents:
+            _error(
+                errors,
+                "$.verification.verification_agents.agents",
+                f"必须包含且仅包含 {sorted(required_agents)}",
+            )
+        digests = agents.get("agent_input_digests")
+        if not isinstance(digests, dict):
+            _error(
+                errors,
+                "$.verification.verification_agents.agent_input_digests",
+                "缺少 Agent 输入摘要",
+            )
+        else:
+            for agent_id in required_agents:
+                if digests.get(agent_id) != expected_digest:
+                    _error(
+                        errors,
+                        (
+                            "$.verification.verification_agents."
+                            f"agent_input_digests.{agent_id}"
+                        ),
+                        "Agent 摘要与当前 lock 不一致，必须重新运行 Agent",
+                    )
 
 
 def _canonical_id(
@@ -202,6 +236,100 @@ def _validate_exact_config(
     walk(config, f"{path}.config")
 
 
+def _option_keys(
+    value: object,
+    field_type: str,
+    path: str,
+    errors: list[dict],
+) -> object:
+    values = value if isinstance(value, list) else [value]
+    if field_type == "MultiSelect" and not isinstance(value, list):
+        _error(errors, path, "MultiSelect 必须使用 {key, label} 数组")
+    keys = []
+    for index, item in enumerate(values):
+        item_path = f"{path}[{index}]" if isinstance(value, list) else path
+        if not isinstance(item, dict):
+            _error(
+                errors,
+                item_path,
+                "选项值必须是 {key, label}，转换器拒绝猜测中文 label",
+            )
+            continue
+        key = item.get("key")
+        label = item.get("label")
+        if not isinstance(key, str) or not key:
+            _error(errors, f"{item_path}.key", "option key 缺失")
+            continue
+        if not isinstance(label, str) or not label:
+            _error(errors, f"{item_path}.label", "option label 缺失")
+        keys.append(key)
+    if isinstance(value, list):
+        return keys
+    return keys[0] if keys else None
+
+
+def _normalize_config_options(
+    value: object,
+    field_types: dict[str, str],
+    path: str,
+    errors: list[dict],
+) -> object:
+    if isinstance(value, list):
+        return [
+            _normalize_config_options(
+                item,
+                field_types,
+                f"{path}[{index}]",
+                errors,
+            )
+            for index, item in enumerate(value)
+        ]
+    if not isinstance(value, dict):
+        return copy.deepcopy(value)
+
+    normalized = {}
+    condition_field_id = None
+    left = value.get("left")
+    if isinstance(left, dict):
+        condition_field_id = left.get("fieldId")
+    for key, child in value.items():
+        child_path = f"{path}.{key}"
+        if key == "value" and value.get("fieldId") in field_types:
+            field_type = field_types[value["fieldId"]]
+            if field_type in OPTION_FIELD_TYPES:
+                normalized[key] = _option_keys(
+                    child,
+                    field_type,
+                    child_path,
+                    errors,
+                )
+                continue
+        if (
+            key == "right"
+            and condition_field_id in field_types
+            and isinstance(child, dict)
+            and child.get("kind") == "literal"
+            and "value" in child
+            and field_types[condition_field_id] in OPTION_FIELD_TYPES
+        ):
+            normalized_right = copy.deepcopy(child)
+            normalized_right["value"] = _option_keys(
+                child.get("value"),
+                field_types[condition_field_id],
+                f"{child_path}.value",
+                errors,
+            )
+            normalized[key] = normalized_right
+            continue
+        normalized[key] = _normalize_config_options(
+            child,
+            field_types,
+            child_path,
+            errors,
+        )
+    return normalized
+
+
 def _select_workflow(
     lock: dict,
     workflow_name: str | None,
@@ -297,6 +425,11 @@ def convert_lock(
                 "触发器 app_id 与 lock.target.app_id 不一致",
             )
 
+    field_types = {
+        reference.get("field_id"): reference.get("type")
+        for reference in workflow.get("field_references", [])
+        if isinstance(reference, dict) and reference.get("field_id")
+    }
     converted_nodes = []
     for node_index, node in enumerate(workflow.get("node_chain", [])):
         path = f"{workflow_path}.node_chain[{node_index}]"
@@ -318,13 +451,19 @@ def convert_lock(
             errors,
         )
         _validate_exact_config(node, path, errors)
+        normalized_config = _normalize_config_options(
+            node.get("config"),
+            field_types,
+            f"{path}.config",
+            errors,
+        )
         converted = {
             "seq": node.get("index"),
             "alias": node.get("alias"),
             "nodeType": node.get("node_type"),
             "type_id": type_id,
             "name": node.get("name"),
-            "config": copy.deepcopy(node.get("config")),
+            "config": normalized_config,
         }
         if action_id is not None:
             converted["action_id"] = action_id
@@ -344,6 +483,10 @@ def convert_lock(
             converted_reference["expected_options"] = copy.deepcopy(
                 reference["expected_options"]
             )
+        if "relation_worksheet_id" in reference:
+            converted_reference["relation_worksheet_id"] = reference[
+                "relation_worksheet_id"
+            ]
         converted_references.append(converted_reference)
 
     meta = lock.get("meta", {})

@@ -163,6 +163,55 @@ def validate_envelopes(envelopes, required_ids, expected_digests):
     return format_failures, by_agent
 
 
+def validate_payload_against_target(by_agent, target):
+    failures = []
+    agent2 = by_agent.get(AGENT_IDS["agent2"])
+    if agent2:
+        def canonical_int(node, canonical, legacy):
+            value = node.get(canonical)
+            if value is None:
+                value = node.get(legacy)
+            if isinstance(value, str) and value.isdigit():
+                return int(value)
+            return value
+
+        expected_nodes = [
+            (
+                workflow.get("name"),
+                node.get("alias"),
+                canonical_int(node, "type_id", "typeId"),
+                canonical_int(node, "action_id", "actionId"),
+            )
+            for workflow in target.get("workflows", [])
+            if isinstance(workflow, dict)
+            for node in workflow.get("node_chain", [])
+            if isinstance(node, dict) and node.get("alias")
+        ]
+        actual_nodes = [
+            (
+                node.get("workflow_name"),
+                node.get("node_alias"),
+                node.get("type_id"),
+                node.get("action_id"),
+            )
+            for node in agent2.get("payload", {}).get("node_checks", [])
+            if isinstance(node, dict) and node.get("node_alias")
+        ]
+        if expected_nodes and expected_nodes != actual_nodes:
+            failures.append(
+                _format_failure(
+                    "$.payload.node_checks",
+                    "FORMAT_AGENT_TARGET_MISMATCH",
+                    (
+                        "Agent 2 node_checks 必须与当前 lock 节点完全一致；"
+                        "期望 (workflow,alias,type_id,action_id) "
+                        f"顺序={expected_nodes}，实际={actual_nodes}"
+                    ),
+                )
+            )
+    return failures
+
+
 def _dedupe_fix_items(envelopes):
     fix_plan = {"easy": [], "medium": [], "hard": [], "total_issues": 0}
     for category in ("easy", "medium", "hard"):
@@ -369,6 +418,7 @@ def run_merge(
         required_ids,
         expected_digests,
     )
+    format_failures.extend(validate_payload_against_target(by_agent, target))
     format_failures = load_failures + (
         [source_failure] if source_failure else []
     ) + format_failures

@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "agent_id": "agent_1_logic",
   "input_digest": "fb62c65519f17b886ee47b4488161f19ffec529af3d926ce5ad70a492f18ad2c",
   "verdict": "pass",
   "failure_code": null,
   "summary": {
-    "total_checks": 5,
-    "passed": 5,
+    "total_checks": 6,
+    "passed": 6,
     "failed": 0,
     "uncertain": 0
   },
@@ -23,7 +23,8 @@
       "timeline": {"result": "pass", "violations": []},
       "naming_and_fields": {"result": "pass", "violations": []},
       "logic": {"result": "pass", "violations": []},
-      "signals": {"result": "pass", "warnings": []}
+      "signals": {"result": "pass", "warnings": []},
+      "completeness": {"result": "pass", "violations": []}
     }
   }
 }

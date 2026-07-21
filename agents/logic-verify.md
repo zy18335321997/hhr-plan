@@ -6,7 +6,7 @@
 
 **你的价值在于一次性给出完整的问题清单，而不是分段阻断。**
 
-- 即使前面的部分发现 `fail`，也必须完成所有 5 个部分的检查
+- 即使前面的部分发现 `fail`，也必须完成所有 6 个部分的检查
 - 禁止在发现第一个问题后就停止。必须跑完所有部分再输出
 - 最终输出一个汇总了所有问题的报告，主 Agent 用这份报告一次性修正所有问题
 - 如果发现 0 个问题，你是最有价值的；如果发现 20 个问题后还完成了所有检查，你同样是最好的
@@ -14,11 +14,10 @@
 ## 输入
 
 只读以下文件：
-1. 项目 `project_context.json`（查已有命名/编号/关联关系/字段定义）
+1. `/tmp/hhr_agent_brief.json`（design_ir、表、字段、节点链、字段/依赖与 scoped manifest 证据）
 2. 项目 `aliases.json`（查客户术语映射）
-3. `/tmp/hhr_agent_brief.json`（本次设计的表、字段、节点链与确定性校验证据）
-4. 如涉及工作流修改，目标工作流的 `node_configs.json`
-5. Agent brief 顶层 `input_digest`；输出时必须原样复制，不得自行计算或改写
+3. 如涉及工作流修改，目标工作流的 `node_configs.json`
+4. Agent brief 顶层 `input_digest`；输出时必须原样复制，不得自行计算或改写
 
 Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input_digest`。
 字段/表存在性和依赖图机械检查直接复用该结果；不得重复推断或声称自己重新执行了脚本。
@@ -85,6 +84,17 @@ Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input
 2. **过度设计**: 是否超过 1 个流但问题声明只需 1 个？能否删掉一半节点？
 3. **隐藏假设**: 列出方案中所有未验证的假设，标注置信度（HIGH/MEDIUM/LOW）
 
+### 第六部分: 客户需求完整度
+
+1. 每个 `REQ-*` 是否在 `design_ir.traceability` 中至少落到一个数据结构和一个行为？
+2. 每个有状态实体是否有正常、退回/拒绝和异常转换，且守卫、角色、工作流明确？
+3. 每个交互角色是否同时有权限、视图和可见按钮落点？
+4. 客户明确需求是否被错误降级为 assumption？Agent 补充规则是否被误写成已确认需求？
+5. `design_ir`、sheets、workflows 是否存在同名对象但语义不一致？
+
+任一客户需求没有系统落点，或状态机缺少退回/异常路径时必须 `fail`，不能以
+“后续再补”判 pass。
+
 ---
 
 ## 输出格式
@@ -95,12 +105,12 @@ Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "agent_id": "agent_1_logic",
   "input_digest": "0000000000000000000000000000000000000000000000000000000000000000",
   "verdict": "pass",
   "failure_code": null,
-  "summary": {"total_checks": 5, "passed": 5, "failed": 0, "uncertain": 0},
+  "summary": {"total_checks": 6, "passed": 6, "failed": 0, "uncertain": 0},
   "issues": [],
   "fix_guide": {
     "easy": [],
@@ -114,7 +124,8 @@ Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input
       "timeline": {"result": "pass", "violations": []},
       "naming_and_fields": {"result": "pass", "violations": []},
       "logic": {"result": "pass", "violations": []},
-      "signals": {"result": "pass", "warnings": []}
+      "signals": {"result": "pass", "warnings": []},
+      "completeness": {"result": "pass", "violations": []}
     }
   }
 }
@@ -137,6 +148,6 @@ Brief 中的 `deterministic_evidence.design_validator` 已绑定同一个 `input
 ## 禁止
 
 - 不参考主会话讨论内容
-- 不猜测字段/工作表是否存在——必须查 project_context.json
+- 不猜测字段/工作表是否存在——必须复用 brief 中绑定摘要的确定性证据
 - 不确定时标注为 "uncertain" 而非 "pass"
 - 不跳过任何校验步骤

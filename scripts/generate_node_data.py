@@ -107,8 +107,8 @@ def _node_display_name(type_id, type_name, node_name):
     return f"未知节点(typeId={type_id})"
 
 
-def generate(project_name, force=False):
-    proj_dir = os.path.join(BASE, project_name)
+def generate(project_name, force=False, project_path=None):
+    proj_dir = project_path or os.path.join(BASE, project_name)
     node_data_path = os.path.join(proj_dir, "_node_data.json")
     all_wf_path = os.path.join(proj_dir, "_all_workflows.json")
     manifest_path = os.path.join(proj_dir, "business-flow-manifest.json")
@@ -145,23 +145,72 @@ def generate(project_name, force=False):
                 print(f"  {project_name}: already enriched ({enriched}/{len(nd)} have trigger types)")
                 return False
 
-    # ── Source 1: _all_workflows.json (Browser extraction, full) ──
-    if os.path.exists(all_wf_path):
-        return generate_from_browser(project_name, all_wf_path, manifest_path, node_data_path, force)
-
-    # ── Source 2: nodes.json only (Browser extraction, node-level) ──
     nodes_json_path = os.path.join(proj_dir, "nodes.json")
-    if os.path.exists(nodes_json_path):
-        return generate_from_nodes_json(project_name, nodes_json_path, manifest_path, node_data_path)
-
-    # ── Source 2.5: PID directories (workflow-analyzer Browser extraction) ──
     pid_dirs = _discover_pid_dirs(proj_dir)
-    if pid_dirs:
-        return generate_from_pid_dirs(project_name, pid_dirs, manifest_path, node_data_path)
+    pid_mtime = max(
+        (
+            max(os.path.getmtime(path) for path in (directory,))
+            for _, directory in pid_dirs
+        ),
+        default=0,
+    )
+    candidates = {
+        "all_workflows": (
+            os.path.getmtime(all_wf_path)
+            if os.path.exists(all_wf_path)
+            else 0
+        ),
+        "nodes": (
+            os.path.getmtime(nodes_json_path)
+            if os.path.exists(nodes_json_path)
+            else 0
+        ),
+        "pid_dirs": pid_mtime,
+        "manifest": (
+            os.path.getmtime(manifest_path)
+            if os.path.exists(manifest_path)
+            else 0
+        ),
+    }
+    source = max(candidates, key=candidates.get)
 
-    # ── Source 3: manifest fallback ──
-    if os.path.exists(manifest_path):
-        return generate_from_manifest(project_name, manifest_path, node_data_path)
+    # Select the newest authoritative extraction source. A newer manifest must
+    # not be overwritten by an older partial nodes.json.
+    if source == "all_workflows" and candidates[source]:
+        return generate_from_browser(
+            project_name,
+            all_wf_path,
+            manifest_path,
+            node_data_path,
+            force,
+            proj_dir,
+        )
+
+    if source == "nodes" and candidates[source]:
+        return generate_from_nodes_json(
+            project_name,
+            nodes_json_path,
+            manifest_path,
+            node_data_path,
+            proj_dir,
+        )
+
+    if source == "pid_dirs" and candidates[source]:
+        return generate_from_pid_dirs(
+            project_name,
+            pid_dirs,
+            manifest_path,
+            node_data_path,
+            proj_dir,
+        )
+
+    if source == "manifest" and candidates[source]:
+        return generate_from_manifest(
+            project_name,
+            manifest_path,
+            node_data_path,
+            proj_dir,
+        )
 
     print(f"  {project_name}: no data source found")
     return False
@@ -523,20 +572,27 @@ def _summarize_node(n, orphan=False):
     return entry
 
 
-def generate_from_browser(project_name, all_wf_path, manifest_path, node_data_path, force):
+def generate_from_browser(
+    project_name,
+    all_wf_path,
+    manifest_path,
+    node_data_path,
+    force,
+    proj_dir,
+):
     awf = json.load(open(all_wf_path, encoding="utf-8"))
     wfs = awf.get("workflows", [])
     if not wfs:
         wfs = awf if isinstance(awf, list) else []
 
     # Try to load nodes.json for field-level detail
-    nodes_json_path = os.path.join(BASE, project_name, "nodes.json")
+    nodes_json_path = os.path.join(proj_dir, "nodes.json")
     nodes_detail = {}
     if os.path.exists(nodes_json_path):
         nodes_detail = json.load(open(nodes_json_path, encoding="utf-8"))
 
     # Load fieldId→fieldName map (from inject_all.js output)
-    field_map_path = os.path.join(BASE, project_name, "_field_map.json")
+    field_map_path = os.path.join(proj_dir, "_field_map.json")
     field_map = {}
     if os.path.exists(field_map_path):
         fm = json.load(open(field_map_path, encoding="utf-8"))
@@ -656,7 +712,7 @@ def generate_from_browser(project_name, all_wf_path, manifest_path, node_data_pa
     with open(node_data_path, "w", encoding="utf-8") as f:
         json.dump(node_data, f, ensure_ascii=False, indent=2)
 
-    audit_path = os.path.join(BASE, project_name, "_axiom_audit.json")
+    audit_path = os.path.join(proj_dir, "_axiom_audit.json")
     audit = {
         "project": project_name,
         "axiom1_backfill": {"total": axiom1_total_create, "with_backfill": axiom1_backfill},
@@ -666,7 +722,7 @@ def generate_from_browser(project_name, all_wf_path, manifest_path, node_data_pa
         json.dump(audit, f, ensure_ascii=False, indent=2)
 
     # Save node_details for axiom audits
-    details_path = os.path.join(BASE, project_name, "_node_details.json")
+    details_path = os.path.join(proj_dir, "_node_details.json")
     with open(details_path, "w", encoding="utf-8") as f:
         json.dump(node_details, f, ensure_ascii=False, indent=2)
 
@@ -675,7 +731,13 @@ def generate_from_browser(project_name, all_wf_path, manifest_path, node_data_pa
     return True
 
 
-def generate_from_nodes_json(project_name, nodes_json_path, manifest_path, node_data_path):
+def generate_from_nodes_json(
+    project_name,
+    nodes_json_path,
+    manifest_path,
+    node_data_path,
+    proj_dir,
+):
     """Extract from nodes.json only (no _all_workflows.json)."""
     nodes_detail = json.load(open(nodes_json_path, encoding="utf-8"))
 
@@ -771,7 +833,7 @@ def generate_from_nodes_json(project_name, nodes_json_path, manifest_path, node_
     with open(node_data_path, "w", encoding="utf-8") as f:
         json.dump(node_data, f, ensure_ascii=False, indent=2)
 
-    audit_path = os.path.join(BASE, project_name, "_axiom_audit.json")
+    audit_path = os.path.join(proj_dir, "_axiom_audit.json")
     with open(audit_path, "w", encoding="utf-8") as f:
         json.dump({"project": project_name,
                    "axiom1_backfill": {"total": axiom1_total, "with_backfill": axiom1_backfill},
@@ -805,7 +867,13 @@ def _discover_pid_dirs(proj_dir):
     return pid_dirs
 
 
-def generate_from_pid_dirs(project_name, pid_dirs, manifest_path, node_data_path):
+def generate_from_pid_dirs(
+    project_name,
+    pid_dirs,
+    manifest_path,
+    node_data_path,
+    proj_dir,
+):
     """Generate _node_data.json from PID directory node_configs.json + workflow_meta.json."""
     # Build manifest r/w lookup by PID
     manifest_rw = {}
@@ -821,7 +889,7 @@ def generate_from_pid_dirs(project_name, pid_dirs, manifest_path, node_data_path
 
     # Load fieldId→fieldName map (set module-level for _summarize_node)
     global field_map
-    field_map_path = os.path.join(BASE, project_name, "_field_map.json")
+    field_map_path = os.path.join(proj_dir, "_field_map.json")
     field_map = {}
     if os.path.exists(field_map_path):
         fm_data = json.load(open(field_map_path, encoding="utf-8"))
@@ -955,15 +1023,26 @@ def _load_api_worksheets(project_name, proj_dir):
     return api_map
 
 
-def generate_from_manifest(project_name, manifest_path, node_data_path):
+def generate_from_manifest(
+    project_name,
+    manifest_path,
+    node_data_path,
+    proj_dir=None,
+):
     manifest = json.load(open(manifest_path, encoding="utf-8"))
+    existing = {}
+    if os.path.exists(node_data_path):
+        try:
+            existing = json.load(open(node_data_path, encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
     tables = manifest.get("tables", {})
     node_data = {}
     seen = set()
     corrections = 0
 
     # Load API-verified worksheet names for cross-validation
-    proj_dir = os.path.join(BASE, project_name)
+    proj_dir = proj_dir or os.path.join(BASE, project_name)
     api_worksheets = _load_api_worksheets(project_name, proj_dir)
 
     for sheet_name, wfs in tables.items():
@@ -979,6 +1058,11 @@ def generate_from_manifest(project_name, manifest_path, node_data_path):
                 corrections += 1
 
             node_data[pid] = {
+                **(
+                    existing.get(pid, {})
+                    if isinstance(existing.get(pid), dict)
+                    else {}
+                ),
                 "name": wf.get("wf", ""),
                 "worksheet": actual_worksheet,
                 "trigger": wf.get("trigger", "unknown"),
@@ -1000,7 +1084,15 @@ def generate_from_manifest(project_name, manifest_path, node_data_path):
 
 def main():
     force = "--force" in sys.argv
+    project_path = None
+    if "--project-path" in sys.argv:
+        path_index = sys.argv.index("--project-path")
+        if path_index + 1 >= len(sys.argv):
+            raise SystemExit("--project-path requires a value")
+        project_path = sys.argv[path_index + 1]
     project_names = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if project_path in project_names:
+        project_names.remove(project_path)
 
     if not project_names or "--all" in sys.argv:
         reg_path = os.path.join(BASE, "projects_registry.json")
@@ -1012,7 +1104,7 @@ def main():
         return
 
     for name in project_names:
-        generate(name, force=force)
+        generate(name, force=force, project_path=project_path)
 
 
 if __name__ == "__main__":
