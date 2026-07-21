@@ -167,3 +167,10 @@
   状态完备 9.25、可执行细节 8.0，达到预设目标。
 - `hap-flow-exec` 已建立独立 Git 基线；新增 contract→batch DSL、live preflight、
   execution_state 和失败分类。真实写入测试等待用户提供沙箱。
+- 2026-07-21 在 `yuehu.yikuaida.cn` CRM 应用中新建隔离工作表和工作流完成实机
+  验收：live preflight、事件触发、batch-add、save-action(type=9+option key)、
+  结构复核、发布、记录触发和 execution_state 全部通过；测试工作流与工作表已删除，
+  清理后原有工作流仍为 37 个。证据见
+  `tests/evals/live-sandbox-2026-07-21.json`。
+- 实机发现 `--json` 是 HAP CLI 全局选项，已修正为
+  `hap --json worksheet/app/workflow ...`，避免 live preflight 使用错误参数。

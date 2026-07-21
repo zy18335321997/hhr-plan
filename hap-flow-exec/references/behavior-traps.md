@@ -22,7 +22,7 @@
 ### T4: option 字段用中文文字而非 UUID key
 - **现象**: 下拉/状态字段更新后值不生效
 - **根因**: 平台存储的是 UUID key，不是显示文字
-- **正确做法**: 查 `hap worksheet info WS_ID --json` 获取 `options[].key`
+- **正确做法**: 查 `hap --json worksheet info WS_ID` 获取 `options[].key`
 
 ### T5: 审批/子流程内部 target.node 用了错误的引用
 - **现象**: 审批内部节点无法引用审批记录

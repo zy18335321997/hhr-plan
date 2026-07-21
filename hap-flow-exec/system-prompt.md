@@ -287,8 +287,8 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/run_batch_add.py \
 ```bash
 # 先只读获取主流程与 inner process 结构，生成 PID 分域 alias 映射
 # 对主 PID 和 batch-output.created[].innerProcessId 分别执行
-hap workflow structure PID --json > /tmp/hap-workflow-structure-main.json
-hap workflow structure INNER_PID --json > /tmp/hap-workflow-structure-inner.json
+hap --json workflow structure PID > /tmp/hap-workflow-structure-main.json
+hap --json workflow structure INNER_PID > /tmp/hap-workflow-structure-inner.json
 python3 ~/.claude/skills/hap-flow-exec/scripts/structure_to_mappings.py \
   /tmp/hap-workflow-structure-main.json \
   /tmp/hap-workflow-structure-inner.json \
@@ -346,7 +346,7 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/save_actions.py \
 
 ```bash
 # 拉取工作流结构
-hap workflow structure PID --json
+hap --json workflow structure PID
 
 # 对关键节点，直接调 flowNode/get 验证完整配置
 # （因为 structure 可能隐藏部分节点类型）
@@ -427,7 +427,7 @@ hap workflow publish PID
 hap workflow list --app-id APP_ID | grep WORKFLOW_NAME
 
 # 确认节点可访问
-hap workflow structure PID --json | jq '.nodes | length'
+hap --json workflow structure PID | jq '.nodes | length'
 ```
 
 输出最终报告：

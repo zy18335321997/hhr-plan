@@ -1,0 +1,33 @@
+{
+  "date": "2026-07-21",
+  "environment": {
+    "host": "http://yuehu.yikuaida.cn",
+    "app_id": "c27f2468-49e5-48f4-ad1f-7342cc3637e1",
+    "app_name": "CRM",
+    "isolation": "dedicated temporary worksheet and workflow"
+  },
+  "temporary_objects": {
+    "worksheet_id": "6a5f85f5ad0dd7e1ab8df438",
+    "workflow_id": "6a5f86973068384df36f5d74",
+    "record_row_id": "7dfd07f7-01d9-4221-b01f-f041bc199c42",
+    "cleanup": "verified"
+  },
+  "checks": {
+    "static_preflight": "pass",
+    "live_app_field_option_preflight": "pass",
+    "contract_to_batch_dsl": "pass",
+    "workflow_skeleton_create": "pass",
+    "worksheet_event_trigger_bind": "pass",
+    "batch_add": "pass",
+    "save_action_field_type_9": "pass",
+    "save_action_option_key": "hhr_submitted",
+    "structure_source_node": "trigger node verified",
+    "publish": "pass",
+    "record_trigger_execution": "pass",
+    "execution_state": "completed",
+    "test_workflow_deleted": "pass",
+    "test_worksheet_deleted": "pass",
+    "existing_workflow_count_after_cleanup": 37
+  },
+  "verdict": "pass"
+}

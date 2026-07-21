@@ -161,12 +161,16 @@ def _load_info(
     worksheet_id: str,
     snapshot_dir: str | None,
     hap_bin: str,
+    app_id: str | None = None,
 ) -> dict:
     if snapshot_dir:
         path = Path(snapshot_dir) / f"{worksheet_id}.json"
         return json.loads(path.read_text(encoding="utf-8"))
+    command = [hap_bin, "--json", "worksheet", "info", worksheet_id]
+    if app_id:
+        command.extend(["--app-id", app_id])
     completed = subprocess.run(
-        [hap_bin, "worksheet", "info", worksheet_id, "--json"],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -189,7 +193,7 @@ def _load_app_info(
         path = Path(snapshot_dir) / f"app-{app_id}.json"
         return json.loads(path.read_text(encoding="utf-8"))
     completed = subprocess.run(
-        [hap_bin, "app", "info", app_id, "--json"],
+        [hap_bin, "--json", "app", "info", "--app-id", app_id],
         check=False,
         capture_output=True,
         text=True,
@@ -287,6 +291,7 @@ def validate_live(
                 worksheet_id,
                 snapshot_dir,
                 hap_bin,
+                target_app,
             )
         except (OSError, json.JSONDecodeError, RuntimeError) as exc:
             errors.append(
