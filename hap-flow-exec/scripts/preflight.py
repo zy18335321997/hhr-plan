@@ -100,7 +100,7 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
         errors.append("nodes 为空")
 
     # 2. alias 唯一性
-    aliases = [n["alias"] for n in nodes]
+    aliases = ["trigger"] + [n["alias"] for n in nodes]
     dupes = [a for a in aliases if aliases.count(a) > 1]
     if dupes:
         errors.append(f"nodeAlias 重复: {list(set(dupes))}")

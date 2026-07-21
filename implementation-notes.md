@@ -174,3 +174,11 @@
   `tests/evals/live-sandbox-2026-07-21.json`。
 - 实机发现 `--json` 是 HAP CLI 全局选项，已修正为
   `hap --json worksheet/app/workflow ...`，避免 live preflight 使用错误参数。
+- 复杂实机验收覆盖条件分支、审批块、审批内部流程、子流程、inner→main 发布顺序、
+  低金额分支记录更新和高金额执行历史。首次审批发布因内层直接引用外部
+  `triggerUser` 被平台阻断，execution_state 正确分类为 `PARTIAL_WRITE` 并要求补偿；
+  删除失败流程、改为 `approval_start.ownerid` 后全部发布与执行通过。
+- 复杂验收同时修正三项运行时差异：branch 可合法引用 `trigger`；worksheet info
+  可能不返回 controls，字段必须读取 `worksheet fields`；真实 structure 会清空
+  alias，内部 PID 映射需联合 contract 与 batch output。证据见
+  `tests/evals/complex-live-sandbox-2026-07-21.json`。

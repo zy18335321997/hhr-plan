@@ -74,15 +74,74 @@ def extract_scoped_mappings(structure: object) -> dict[str, dict[str, str]]:
     return mappings
 
 
+def extract_batch_scoped_mappings(
+    contract: dict,
+    batch_output: dict,
+) -> dict[str, dict[str, str]]:
+    main_pid = batch_output.get("pid") or batch_output.get("processId")
+    if not main_pid:
+        return {}
+    mappings = {
+        main_pid: dict(batch_output.get("aliasToNodeId", {}))
+    }
+    created_by_alias = {}
+    inner_pid_by_alias = {}
+    for item in batch_output.get("created", []):
+        if not isinstance(item, dict):
+            continue
+        alias = item.get("alias")
+        node_id = item.get("nodeId")
+        if alias and node_id:
+            created_by_alias.setdefault(alias, []).append(node_id)
+        if alias and item.get("innerProcessId"):
+            inner_pid_by_alias[alias] = item["innerProcessId"]
+
+    def walk(nodes: list[dict]) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            alias = node.get("alias") or node.get("nodeAlias")
+            process = (node.get("config") or {}).get("process") or {}
+            inner_nodes = process.get("nodes") or []
+            if inner_nodes:
+                inner_pid = inner_pid_by_alias.get(alias)
+                if inner_pid:
+                    scope = mappings.setdefault(inner_pid, {})
+                    for inner_node in inner_nodes:
+                        if not isinstance(inner_node, dict):
+                            continue
+                        inner_alias = (
+                            inner_node.get("alias")
+                            or inner_node.get("nodeAlias")
+                        )
+                        if inner_alias in {"approval_start", "sub_trigger"}:
+                            continue
+                        candidates = created_by_alias.get(inner_alias, [])
+                        if len(candidates) == 1:
+                            scope[inner_alias] = candidates[0]
+                    walk(inner_nodes)
+            for path in (node.get("config") or {}).get("paths", []):
+                path_nodes = [
+                    child for child in path.get("nodes", [])
+                    if isinstance(child, dict)
+                ]
+                walk(path_nodes)
+
+    walk(contract.get("nodes", []))
+    return mappings
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="从 workflow structure JSON 提取按 PID 分域的 alias 映射"
     )
     parser.add_argument(
         "structure_files",
-        nargs="+",
+        nargs="*",
         help="主流程及各 inner PID 的 structure JSON",
     )
+    parser.add_argument("--contract", help="execution contract JSON")
+    parser.add_argument("--batch-output", help="batch-add output JSON")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     try:
@@ -92,6 +151,18 @@ def main() -> int:
                 Path(structure_file).read_text(encoding="utf-8")
             )
             for pid, alias_map in extract_scoped_mappings(structure).items():
+                mappings.setdefault(pid, {}).update(alias_map)
+        if args.contract and args.batch_output:
+            contract = json.loads(
+                Path(args.contract).read_text(encoding="utf-8")
+            )
+            batch_output = json.loads(
+                Path(args.batch_output).read_text(encoding="utf-8")
+            )
+            for pid, alias_map in extract_batch_scoped_mappings(
+                contract,
+                batch_output,
+            ).items():
                 mappings.setdefault(pid, {}).update(alias_map)
     except (OSError, json.JSONDecodeError) as exc:
         print(

@@ -208,7 +208,9 @@
           "name": "审批步骤",
           "config": {
             "target": {"node": "approval_start"},
-            "approvers": [{"kind": "triggerUser"}],
+            "approvers": [
+              {"kind": "field", "node": "approval_start", "fieldId": "ownerid"}
+            ],
             "mode": "any",
             "allowReject": true
           }
@@ -232,6 +234,9 @@
 ```
 
 > ⚠️ 审批内部 target.node = **"approval_start"**（固定）
+> ⚠️ 审批人不能直接引用外层 `triggerUser`；使用
+> `{"kind":"field","node":"approval_start","fieldId":"ownerid"}` 或其他
+> approval_start 可见字段。
 > ⚠️ 审批内部分支 = **resultFlow: true**
 > ⚠️ 审批外部必须接 resultFlow: false 的分支处理 PASS/OVERRULE
 

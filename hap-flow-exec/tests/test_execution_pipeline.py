@@ -316,6 +316,46 @@ class LivePreflightTests(unittest.TestCase):
             any("relation_worksheet_id" in error for error in static_errors)
         )
 
+    def test_static_preflight_accepts_trigger_as_branch_source(self):
+        contract = copy.deepcopy(load_contract())
+        contract["nodes"][1]["config"]["paths"][0]["condition"]["left"][
+            "node"
+        ] = "trigger"
+        passed, errors = preflight.validate_static(contract)
+        self.assertTrue(passed, errors)
+
+    def test_live_cli_uses_global_json_flag(self):
+        info_result = mock.Mock(
+            returncode=0,
+            stdout=json.dumps({"appId": "app-001"}),
+            stderr="",
+        )
+        fields_result = mock.Mock(
+            returncode=0,
+            stdout=json.dumps([]),
+            stderr="",
+        )
+        with mock.patch.object(
+            live_preflight.subprocess,
+            "run",
+            side_effect=[info_result, fields_result],
+        ) as run:
+            live_preflight._load_info(
+                "ws-001",
+                None,
+                "hap",
+                "app-001",
+            )
+        self.assertEqual(
+            ["hap", "--json", "worksheet", "info", "ws-001",
+             "--app-id", "app-001"],
+            run.call_args_list[0].args[0],
+        )
+        self.assertEqual(
+            ["hap", "--json", "worksheet", "fields", "ws-001"],
+            run.call_args_list[1].args[0],
+        )
+
 
 class SaveActionTests(unittest.TestCase):
     def test_contract_alias_and_runtime_mapping_create_task(self):
@@ -506,6 +546,52 @@ class BatchRunnerTests(unittest.TestCase):
         self.assertEqual(
             "inner-action",
             mappings["inner-pid"]["inner_update"],
+        )
+
+    def test_batch_output_recovers_inner_alias_mapping(self):
+        contract = {
+            "nodes": [
+                {
+                    "alias": "approval",
+                    "config": {
+                        "process": {
+                            "nodes": [
+                                {
+                                    "nodeAlias": "approval_start",
+                                    "nodeType": "approval_start",
+                                },
+                                {
+                                    "nodeAlias": "approve_step",
+                                    "nodeType": "approve",
+                                },
+                            ]
+                        }
+                    },
+                }
+            ]
+        }
+        batch_output = {
+            "pid": "main-pid",
+            "aliasToNodeId": {"approval": "outer-node"},
+            "created": [
+                {
+                    "alias": "approval",
+                    "nodeId": "outer-node",
+                    "innerProcessId": "inner-pid",
+                },
+                {
+                    "alias": "approve_step",
+                    "nodeId": "inner-approve",
+                },
+            ],
+        }
+        mappings = structure_to_mappings.extract_batch_scoped_mappings(
+            contract,
+            batch_output,
+        )
+        self.assertEqual(
+            "inner-approve",
+            mappings["inner-pid"]["approve_step"],
         )
 
 

@@ -292,6 +292,8 @@ hap --json workflow structure INNER_PID > /tmp/hap-workflow-structure-inner.json
 python3 ~/.claude/skills/hap-flow-exec/scripts/structure_to_mappings.py \
   /tmp/hap-workflow-structure-main.json \
   /tmp/hap-workflow-structure-inner.json \
+  --contract execution_contract.json \
+  --batch-output /tmp/hap-batch-output.json \
   --output /tmp/hap-inner-alias-mappings.json
 
 python3 ~/.claude/skills/hap-flow-exec/scripts/save_actions.py \

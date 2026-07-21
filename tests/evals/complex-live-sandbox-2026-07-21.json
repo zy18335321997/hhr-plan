@@ -1,0 +1,48 @@
+{
+  "date": "2026-07-21",
+  "environment": {
+    "host": "http://yuehu.yikuaida.cn",
+    "app_id": "c27f2468-49e5-48f4-ad1f-7342cc3637e1",
+    "app_name": "CRM",
+    "isolation": "dedicated temporary worksheet and workflows"
+  },
+  "coverage": {
+    "conditional_branch": "live pass",
+    "approval_block_structure": "live pass",
+    "approval_inner_publish": "live pass",
+    "subprocess_structure": "live pass",
+    "subprocess_inner_publish": "live pass",
+    "publish_order_inner_before_main": "live pass",
+    "save_action_single_select_type_9": "live pass",
+    "low_branch_record_execution": "live pass",
+    "high_branch_history": [
+      "amount branch",
+      "approval block",
+      "subprocess"
+    ],
+    "execution_state": "completed"
+  },
+  "recovery": {
+    "initial_failure": "approval approver referenced outer triggerUser",
+    "publish_result": "warningType=105 blocked",
+    "classification": "PARTIAL_WRITE",
+    "decision": "await_user",
+    "compensation": "failed test workflow deleted",
+    "corrective_design": "approval_start.ownerid",
+    "retry_result": "pass"
+  },
+  "discoveries": [
+    "HAP CLI --json is a global option",
+    "worksheet info may omit controls; live preflight must use worksheet fields",
+    "branch condition may validly reference trigger",
+    "approval inner approver must use approval_start-visible fields",
+    "real workflow structure clears aliases; inner mappings require contract plus batch output"
+  ],
+  "cleanup": {
+    "test_workflows_removed": true,
+    "test_worksheet_removed": true,
+    "existing_workflow_count_after_cleanup": 37,
+    "existing_business_objects_modified": false
+  },
+  "verdict": "pass"
+}

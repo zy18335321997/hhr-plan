@@ -16,6 +16,15 @@ FIELD_TYPE_IDS = {
     "DateTime": {16},
     "Relation": {29},
 }
+SYSTEM_FIELD_IDS = {
+    "ownerid",
+    "caid",
+    "uaid",
+    "ctime",
+    "utime",
+    "rowid",
+    "wfstatus",
+}
 
 
 def _field_id(field: dict) -> str:
@@ -122,7 +131,11 @@ def _collect_field_usages(
                 return
             local_worksheet = value.get("worksheet") or worksheet
             field_id = value.get("fieldId")
-            if isinstance(field_id, str) and field_id:
+            if (
+                isinstance(field_id, str)
+                and field_id
+                and field_id not in SYSTEM_FIELD_IDS
+            ):
                 source_alias = value.get("node")
                 field_worksheet = (
                     alias_to_worksheet.get(source_alias)
@@ -169,19 +182,41 @@ def _load_info(
     command = [hap_bin, "--json", "worksheet", "info", worksheet_id]
     if app_id:
         command.extend(["--app-id", app_id])
-    completed = subprocess.run(
+    info_result = subprocess.run(
         command,
         check=False,
         capture_output=True,
         text=True,
     )
-    if completed.returncode != 0:
+    if info_result.returncode != 0:
         raise RuntimeError(
-            completed.stderr.strip()
-            or completed.stdout.strip()
+            info_result.stderr.strip()
+            or info_result.stdout.strip()
             or f"hap worksheet info failed: {worksheet_id}"
         )
-    return json.loads(completed.stdout)
+    fields_result = subprocess.run(
+        [hap_bin, "--json", "worksheet", "fields", worksheet_id],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fields_result.returncode != 0:
+        raise RuntimeError(
+            fields_result.stderr.strip()
+            or fields_result.stdout.strip()
+            or f"hap worksheet fields failed: {worksheet_id}"
+        )
+    info = json.loads(info_result.stdout)
+    fields = json.loads(fields_result.stdout)
+    info["fields"] = [
+        {
+            **field,
+            "fieldId": field.get("fieldId") or field.get("id"),
+            "typeId": field.get("typeId") or field.get("subType"),
+        }
+        for field in fields
+    ]
+    return info
 
 
 def _load_app_info(
@@ -340,7 +375,12 @@ def validate_live(
             continue
         actual_type = field.get("type") or field.get("typeId")
         expected_types = FIELD_TYPE_IDS.get(reference.get("type"))
-        if expected_types and actual_type not in expected_types:
+        type_matches = (
+            actual_type == reference.get("type")
+            if isinstance(actual_type, str)
+            else not expected_types or actual_type in expected_types
+        )
+        if not type_matches:
             errors.append(
                 {
                     "code": "LIVE_FIELD_TYPE_MISMATCH",

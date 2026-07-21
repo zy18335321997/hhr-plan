@@ -140,7 +140,9 @@ live preflight 必须与平台返回的关联目标工作表完全一致。
         "name": "审批步骤",
         "config": {
           "target": {"node": "approval_start"},
-          "approvers": [{"kind": "triggerUser"}],
+          "approvers": [
+            {"kind": "field", "node": "approval_start", "fieldId": "ownerid"}
+          ],
           "allowReject": true
         }
       }
