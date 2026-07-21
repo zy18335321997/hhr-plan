@@ -193,6 +193,34 @@ jobs:
           "$RUNNER_TEMP/execution_contract.json"
           tests/fixtures/expected_execution_contract.json
 
+  executor-integration:
+    name: Bundled Executor Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Compile executor scripts
+        run: python3 -m py_compile hap-flow-exec/scripts/*.py
+
+      - name: Run executor tests
+        run: >-
+          python3 -m unittest discover
+          -s hap-flow-exec/tests
+          -p 'test_*.py'
+
+      - name: Run executor static and snapshot preflight
+        run: |
+          python3 hap-flow-exec/scripts/preflight.py \
+            hap-flow-exec/tests/fixtures/complex-contract.json
+          python3 hap-flow-exec/scripts/live_preflight.py \
+            hap-flow-exec/tests/fixtures/complex-contract.json \
+            --snapshot-dir hap-flow-exec/tests/fixtures/worksheet-info
+
   regression-audit:
     name: Regression Fixture Check
     runs-on: ubuntu-latest

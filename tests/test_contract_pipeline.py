@@ -21,9 +21,11 @@ import verification_merge  # noqa: E402
 from lock_to_contract import ConversionError, convert_lock  # noqa: E402
 
 
-HAP_PREFLIGHT_PATH = (
-    ROOT.parent / "hap-flow-exec" / "scripts" / "preflight.py"
-)
+HAP_PREFLIGHT_PATH = ROOT / "hap-flow-exec" / "scripts" / "preflight.py"
+if not HAP_PREFLIGHT_PATH.is_file():
+    HAP_PREFLIGHT_PATH = (
+        ROOT.parent / "hap-flow-exec" / "scripts" / "preflight.py"
+    )
 
 
 def load_fixture(name):
