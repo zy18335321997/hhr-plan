@@ -3,7 +3,8 @@
   "environment": {
     "host": "http://yuehu.yikuaida.cn",
     "app_id": "c27f2468-49e5-48f4-ad1f-7342cc3637e1",
-    "isolation": "two dedicated temporary worksheets and dedicated workflows"
+    "isolation": "dedicated temporary worksheets, records, and workflows",
+    "current_account_id": "5e90afdd-0910-4d58-b8b5-f116b748f5c1"
   },
   "coverage": {
     "get_single_filter_saved": "live pass",
@@ -18,7 +19,38 @@
     "subprocess_source_status_result": "hhr_processed",
     "pid_scoped_inner_alias_mapping": "live pass",
     "inner_before_main_publish": "live pass",
-    "execution_state": "completed"
+    "execution_state": "completed",
+    "approval_current_user_approve": "live pass; instance status 2",
+    "approval_current_user_reject": "live pass; instance status 3",
+    "get_relation_update": "live pass",
+    "delete_record": "live pass; post-delete read returned 430002",
+    "rollup_branch": "live pass; source result hhr_rollup",
+    "compute_branch": "live pass; 1+1 result selected number_fx_id path and source result hhr_compute",
+    "fill_in_current_user": "live pass; type 3 task submitted true and instance status 2",
+    "send_internal_notice": "live pass",
+    "cc": "live pass",
+    "send_email_current_user": "workflow node live pass; external mailbox receipt not independently checked",
+    "notification_chain_result": "notifications_completed"
+  },
+  "node_capability_matrix": {
+    "get_relation": "live pass; relation output drove target update",
+    "get_single": "live pass with filter",
+    "get_multiple": "live pass with filter",
+    "update_record": "live pass in main and inner processes",
+    "create_record": "live pass in main and inner processes",
+    "delete_record": "live pass; deleted record returned 430002",
+    "branch": "live pass in main and inner processes",
+    "approval_block": "live pass with current user",
+    "approve": "live pass for approve and reject with current user",
+    "fill_in": "live pass with current user",
+    "sub_process": "live pass with inner query, branch, create, and update",
+    "rollup": "live pass",
+    "compute": "live pass",
+    "send_internal_notice": "live pass",
+    "cc": "live pass",
+    "send_email": "workflow node live pass; external mailbox receipt not independently checked",
+    "delay": "gap; structure-only, duration resets to 0 and node cannot publish",
+    "code": "gap; engine test passes, node save returns 500 and node cannot publish"
   },
   "recovery": {
     "batch_add_500_after_nodes_created": "detected as PARTIAL_WRITE",
@@ -38,15 +70,29 @@
     "query filters are visible in node get rather than workflow structure",
     "Relation save-action uses target rowId, not record _id",
     "node changes on an enabled workflow require republish",
-    "real inner process aliases require structure plus contract and batch output"
+    "real inner process aliases require structure plus contract and batch output",
+    "fill_in requires a worksheet-bound trigger and complete id/type/name/property wire",
+    "notice content is verified from top-level sendContent",
+    "approval and fill_in can be exercised by the current user without a second account"
   ],
+  "known_executor_gaps": {
+    "delay": "node add creates one node, but duration resets to 0, isException remains true, and the workflow cannot be published",
+    "code": "test-code returned result=2, but node save returned 500 twice and the workflow cannot be published"
+  },
+  "local_verification": {
+    "hhr_plan_tests": 77,
+    "hhr_plan_test_scope": "agent validation and merge, contract conversion, design IR, CI hardening, performance, and skill path safety",
+    "hap_flow_exec_tests": 38,
+    "hap_flow_exec_test_scope": "batch DSL, live preflight, execution state and recovery, PID mappings, and save actions",
+    "preflight_violations": 0
+  },
   "cleanup": {
     "test_workflows_removed": true,
+    "test_workflow_count": 9,
     "test_worksheets_removed": true,
+    "test_worksheet_count": 4,
+    "post_cleanup_hhr_objects": 0,
     "existing_business_objects_modified": false
   },
-  "deferred": [
-    "manual approval pass/reject requires a second test member"
-  ],
-  "verdict": "pass_with_manual_approval_deferred"
+  "verdict": "16 executable node types live passed; delay and code remain explicit executor gaps"
 }

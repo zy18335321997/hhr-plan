@@ -365,7 +365,7 @@ hap --json workflow structure PID
 □ 分支节点的 condition 完整（含 left/op/right）？
 □ 审批节点的 process.nodes 完整？
 □ 子流程节点的 executionMode 正确？
-□ 通知节点的 flowNodeMap.106.content 非空？
+□ 通知节点顶层 sendContent 与合约一致？（flowNodeMap.106.content 可为空）
 ```
 
 ⛔ **BLOCKING — 任一不匹配即停**：
@@ -375,7 +375,7 @@ hap --json workflow structure PID
 | 节点 alias | 检查项 | 合约预期 | 实际值 |
 |-----------|--------|---------|--------|
 | check_status | condition.left.node | get_borrow_record | (空) |
-| notify | flowNodeMap.content | "通知内容" | "" |
+| notify | sendContent | "通知内容" | "" |
 
 不发布，先修正。
 ```

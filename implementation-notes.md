@@ -189,3 +189,9 @@
 - batch-add 在返回 500 时可能已创建全部骨架节点；`run_batch_add.py` 现在会只读
   structure，并在名称唯一且全部节点齐全时恢复 alias 映射，而不是盲目重试。
   证据见 `tests/evals/remaining-live-sandbox-2026-07-22.json`。
+- 2026-07-22 使用当前用户完成审批通过、审批驳回和填写节点，不再依赖第二账号；
+  同轮补测 get_relation 更新、delete_record、rollup、compute，以及
+  send_internal_notice → cc → send_email 通知链。邮件节点以流程成功为证，未独立核验外部收件箱。
+- 18 类执行节点中，16 类已经通过可发布、可执行实机验证。delay 仅能创建结构，
+  时长保存后归零且节点保持异常；code 的 test-code 可返回结果，但节点保存连续 500。
+  这两类仍是明确执行器缺口，不能表述为“所有能力通过”。

@@ -170,6 +170,65 @@ class BatchDslTests(unittest.TestCase):
             )
         )
 
+    def test_fill_form_field_id_is_lowered_to_complete_wire_item(self):
+        contract = load_contract()
+        contract["nodes"] = [
+            {
+                "alias": "fill_self",
+                "nodeType": "fill_in",
+                "name": "本人填写",
+                "config": {
+                    "assignee": {"kind": "user", "userId": "user-1"},
+                    "formProperties": [
+                        {
+                            "fieldId": "field-description",
+                            "type": 2,
+                            "name": "描述",
+                            "permission": "editable",
+                        }
+                    ],
+                },
+            }
+        ]
+        nodes = contract_to_batch_dsl.build_batch_nodes(
+            contract,
+            trigger_node_id="trigger-id",
+        )
+        form_property = nodes[0]["config"]["formProperties"][0]
+        self.assertEqual("field-description", form_property["id"])
+        self.assertEqual(2, form_property["type"])
+        self.assertEqual("描述", form_property["name"])
+        self.assertEqual("editable", form_property["permission"])
+        self.assertEqual(0, form_property["showCard"])
+        self.assertNotIn("fieldId", form_property)
+
+    def test_incomplete_fill_form_property_is_blocked_before_write(self):
+        contract = load_contract()
+        contract["nodes"] = [
+            {
+                "alias": "fill_self",
+                "nodeType": "fill_in",
+                "name": "本人填写",
+                "config": {
+                    "formProperties": [{"fieldId": "field-description"}],
+                },
+            }
+        ]
+        with self.assertRaises(contract_to_batch_dsl.AdapterError) as raised:
+            contract_to_batch_dsl.build_batch_nodes(
+                contract,
+                trigger_node_id="trigger-id",
+            )
+        missing_paths = {
+            error["path"]
+            for error in raised.exception.errors
+            if error["code"] == "FILL_FORM_PROPERTY_INCOMPLETE"
+        }
+        self.assertTrue(any(path.endswith(".type") for path in missing_paths))
+        self.assertTrue(any(path.endswith(".name") for path in missing_paths))
+        self.assertTrue(any(path.endswith(".permission") for path in missing_paths))
+
+
 
 class LivePreflightTests(unittest.TestCase):
     def test_snapshot_field_and_options_pass(self):

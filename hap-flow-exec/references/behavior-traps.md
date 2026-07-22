@@ -84,6 +84,26 @@
 - **根因**: 运行时使用上一次发布快照
 - **正确做法**: 节点配置变更并完成结构复核后，重新 publish 再测试
 
+### T17: fill_in 必须发送完整表单字段 wire
+- **现象**: batch-add 返回成功，填写人和按钮已保存，但节点详情中的 `formProperties` 为空
+- **根因**: 平台不接受只有 `fieldId` 或 `controlId` 的简写，要求 `id + type + name + property`
+- **正确做法**: 合约提供字段 ID、数值类型、名称和权限，由 `contract_to_batch_dsl.py` 递归转换为完整表单项
+
+### T18: fill_in 前必须绑定触发工作表
+- **现象**: 完整 `formProperties` 仍被平台静默丢弃
+- **根因**: 创建审批块时 trigger 尚未绑定实体工作表，导致内部流程的 `appId` 为空
+- **正确做法**: 先保存并复核物理 trigger 的 worksheet/appId，再创建 approval_block 和 fill_in
+
+### T19: 通知内容以顶层 sendContent 为准
+- **现象**: 已发布且成功执行的通知节点中 `flowNodeMap.106.content` 为空
+- **根因**: 当前平台把消息正文保存在节点顶层 `sendContent`，嵌套 content 为空是正常结构
+- **正确做法**: 结构验收检查顶层 `sendContent` 与合约一致，不以嵌套 content 阻断发布
+
+### T20: delay/code 目前不是完整执行能力
+- **现象**: delay 可创建但时长保存后归零；code 的测试接口可运行但节点保存连续 500
+- **根因**: 当前 CLI/平台组合不能把这两类配置持久化为可发布节点
+- **正确做法**: 在适配预检中继续阻断 delay/code，报告明确缺口，不把结构或引擎测试写成实机通过
+
 ## 行为陷阱
 
 ### B1: 擅自简化设计方案

@@ -32,6 +32,67 @@ def _normalize_values(value: object) -> object:
     return {key: _normalize_values(child) for key, child in value.items()}
 
 
+def _normalize_fill_form_properties(
+    value: object,
+    errors: list[dict],
+    path: str,
+) -> object:
+    """Translate contract field metadata to the fill-node form wire shape."""
+    if not isinstance(value, list):
+        _error(
+            errors,
+            path,
+            "FILL_FORM_PROPERTIES_INVALID",
+            "fill_in formProperties 必须是数组",
+        )
+        return value
+    normalized = []
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        if not isinstance(item, dict):
+            _error(
+                errors,
+                item_path,
+                "FILL_FORM_PROPERTY_INVALID",
+                "fill_in 表单字段必须是对象",
+            )
+            normalized.append(copy.deepcopy(item))
+            continue
+        prop = copy.deepcopy(item)
+        if prop.get("fieldId") and not prop.get("id"):
+            prop["id"] = prop.pop("fieldId")
+        required = {
+            "id": lambda field: isinstance(field, str) and bool(field),
+            "type": lambda field: isinstance(field, int) and not isinstance(field, bool),
+            "name": lambda field: isinstance(field, str) and bool(field),
+            "permission": lambda field: field
+            in {"readonly", "editable", "required", "hidden"},
+        }
+        for key, valid in required.items():
+            if not valid(prop.get(key)):
+                _error(
+                    errors,
+                    f"{item_path}.{key}",
+                    "FILL_FORM_PROPERTY_INCOMPLETE",
+                    (
+                        "fill_in 表单字段必须提供非空 id/fieldId、数值 type、"
+                        "非空 name，以及 readonly/editable/required/hidden permission"
+                    ),
+                )
+        prop.setdefault("showCard", 0)
+        prop.setdefault("sectionId", "")
+        prop.setdefault("workflow", False)
+        prop.setdefault("detailTable", False)
+        if "subFormProperties" in prop:
+            prop["subFormProperties"] = _normalize_fill_form_properties(
+                prop["subFormProperties"],
+                errors,
+                f"{item_path}.subFormProperties",
+            )
+        normalized.append(prop)
+    return normalized
+
+
 def build_batch_nodes(
     contract: dict,
     trigger_node_id: str | None = None,
@@ -187,6 +248,12 @@ def build_batch_nodes(
                 "config": _normalize_values(node.get("config", {})),
             }
             config = converted["config"]
+            if converted["nodeType"] == "fill_in" and "formProperties" in config:
+                config["formProperties"] = _normalize_fill_form_properties(
+                    config["formProperties"],
+                    errors,
+                    f"{path}.config.formProperties",
+                )
             replace_trigger(config, f"{path}.config")
             for path_index, branch_path in enumerate(config.get("paths", [])):
                 inlined = []

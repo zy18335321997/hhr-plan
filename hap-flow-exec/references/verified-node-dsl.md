@@ -1,7 +1,8 @@
 # 验证通过的节点 DSL 格式
 
-> 来源：2026-07-05 完整验证 session。18 种节点类型全部通过验证。
-> 16 种通过 batch-add，2 种（delay / code）通过 node add。
+> 来源：2026-07-05 至 2026-07-22 的本地回归与沙箱实机验证。
+> 16 种节点类型已通过可发布、可执行验证；delay / code 仅验证了部分底层能力，
+> 当前执行器仍不能把它们持久化为可发布节点。
 
 ## 获取/查询节点
 
@@ -281,7 +282,8 @@
 
 ## node add 专属（不支持 batch-add）
 
-> 以下两种节点类型 hap CLI 显式禁止通过 batch-add 创建，必须用 `hap workflow node add --after` + `hap workflow node save` 分步创建。
+> 以下两种节点类型不支持 batch-add。`node add` 或测试接口只能验证部分能力，
+> 当前都不能由执行器创建为可发布、可执行节点。
 
 ### delay（延时等待）
 
@@ -289,13 +291,15 @@
 hap workflow node add PID --type 12 --name "延时等待" --after UPSTREAM_NODE_ID
 ```
 
-配置（saveNode）：
+平台配置字段：
 - `executeTimeType`: 0=固定时长, 1=截止时间
 - `number`: 时长数值
 - `unit`: 1=分钟, 2=小时, 3=天
 
-> ⚠️ node add 会产生一对节点（phantom），但功能有效
-> ⚠️ 不支持 batch-add，源码 `_normalize_v3_node` 显式拒绝
+> ⚠️ 实机 `node add` 只创建一个节点，没有 phantom。
+> ⚠️ 使用 `number` 或 `executeTime` 保存后，时长都被平台重置为 0；节点保持
+> `isException=true`，不能发布。因此当前只算结构创建通过，不算执行能力通过。
+> ⚠️ batch-add 仍由 `_normalize_v3_node` 显式拒绝。
 
 ### code（代码块）
 
@@ -303,12 +307,14 @@ hap workflow node add PID --type 12 --name "延时等待" --after UPSTREAM_NODE_
 hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 ```
 
-配置（saveNode）：
+代码测试接口：
 - `code`: JS/Python 代码字符串
 - `language`: "javascript" (默认) 或 "python"
 
-> ⚠️ node add 时不会产生 phantom（与 delay 不同）
-> ⚠️ 不支持 batch-add，源码 `_normalize_v3_node` 显式拒绝
+> ⚠️ `test-code` 执行 `return { result: 2 };` 成功并返回 `result=2`，证明代码引擎可用。
+> ⚠️ 节点保存连续两次返回 500（包括补充 `actionId/version` 的尝试），不能持久化为
+> 可发布节点。因此当前只算引擎测试通过，不算节点执行能力通过。
+> ⚠️ batch-add 仍由 `_normalize_v3_node` 显式拒绝。
 
 ## 统计与通知
 
@@ -397,7 +403,7 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
   "config": {
     "accounts": [{"kind": "triggerUser"}],
     "formProperties": [
-      {"fieldId": "<字段ID>", "name": "备注", "required": false, "editable": true}
+      {"fieldId": "<字段ID>", "type": 2, "name": "备注", "permission": "editable"}
     ],
     "submitText": "提交"
   }
@@ -406,6 +412,11 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 
 > ⚠️ fill_in 只能放在 approval_block 内部 nodes 中
 > ⚠️ 审批内层不需要显式声明 approval_start 节点（隐式存在）
+> ⚠️ 创建审批块前必须先把触发节点绑定到实体工作表；空 trigger 的 `appId` 为空，
+> 平台会静默丢弃填写表单字段。
+> ⚠️ 执行合约必须同时提供 `fieldId`、数值字段 `type`、`name` 和
+> `permission`；转换器会生成平台要求的 `id + type + name + property` 完整表单项。
+> 只发送 `fieldId` 或 `controlId` 时平台会返回成功但静默丢弃填写字段。
 > ⚠️ config.instruction → explain; config.submitText → submit_btn_name
 
 ### send_internal_notice（站内通知）
@@ -422,7 +433,8 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 }
 ```
 
-> ⚠️ 源码已修复：content 正确填充到 flowNodeMap.106.content
+> ⚠️ 验收应检查节点顶层 `sendContent`。正常的已发布通知节点中
+> `flowNodeMap.106.content` 可以为空，不能据此判定通知内容丢失。
 
 ## filter 条件格式
 
@@ -475,8 +487,8 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | send_internal_notice | 27 | batch-add |
 | cc | 5 | batch-add |
 | send_email | 11 | batch-add |
-| delay | 12 | **node add** (batch-add 不支持) |
-| code | 14 | **node add** (batch-add 不支持) |
+| delay | 12 | node add 仅建结构；配置不能持久化，当前不可发布 |
+| code | 14 | test-code 可运行；节点保存 500，当前不可发布 |
 
 ## 已知限制
 
@@ -485,5 +497,5 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | systemField/nowTime 在 update_record 字段值 | valueRef 翻译失败，需 UI 手动设 |
 | schedule + get_multiple + filter | 此组合间歇 500 |
 | notice 收件人 kind=role | CLI 不支持 role 解析，用 kind=field 或 UI 手动 |
-| delay node add 含 phantom | node add 产生一对节点，需清理或 UI 手动删 |
-| code 节点配置 | addNode 后需 saveNode 配置代码内容，CLI 支持有限 |
+| delay 节点配置 | node add 成功，但时长保存后归零且节点异常；当前只能建结构 |
+| code 节点配置 | test-code 可运行，但节点 save 连续 500；当前不能持久化 |
