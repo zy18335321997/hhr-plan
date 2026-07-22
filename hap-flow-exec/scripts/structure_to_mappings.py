@@ -32,6 +32,8 @@ def extract_scoped_mappings(structure: object) -> dict[str, dict[str, str]]:
             or inherited_pid
         )
         flow_node_map = value.get("flowNodeMap")
+        if not pid and isinstance(flow_node_map, dict):
+            pid = value.get("id")
         if isinstance(flow_node_map, dict) and pid:
             scope = mappings.setdefault(pid, {})
             start_event_id = value.get("startEventId")
@@ -41,7 +43,12 @@ def extract_scoped_mappings(structure: object) -> dict[str, dict[str, str]]:
                 alias = _alias(node)
                 node_id = _node_id(node) or map_node_id
                 if not alias and node_id == start_event_id:
-                    alias = "trigger"
+                    if node.get("appType") == 9 or node.get("name") == "发起审批":
+                        alias = "approval_start"
+                    elif value.get("child") or node.get("name") == "子流程":
+                        alias = "sub_trigger"
+                    else:
+                        alias = "trigger"
                 if alias and node_id:
                     scope[alias] = node_id
                 process_node = node.get("processNode")
@@ -131,6 +138,41 @@ def extract_batch_scoped_mappings(
     return mappings
 
 
+def extract_reserved_start_aliases(
+    contract: dict,
+    batch_output: dict,
+) -> dict[str, str]:
+    inner_pid_by_alias = {
+        item.get("alias"): item.get("innerProcessId")
+        for item in batch_output.get("created", [])
+        if isinstance(item, dict)
+        and item.get("alias")
+        and item.get("innerProcessId")
+    }
+    result = {}
+
+    def walk(nodes: list[dict]) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            alias = node.get("alias") or node.get("nodeAlias")
+            node_type = node.get("nodeType") or node.get("node_type")
+            inner_pid = inner_pid_by_alias.get(alias)
+            if inner_pid and node_type == "approval_block":
+                result[inner_pid] = "approval_start"
+            elif inner_pid and node_type == "sub_process":
+                result[inner_pid] = "sub_trigger"
+            process_nodes = (
+                (node.get("config") or {})
+                .get("process", {})
+                .get("nodes", [])
+            )
+            walk(process_nodes)
+
+    walk(contract.get("nodes", []))
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="从 workflow structure JSON 提取按 PID 分域的 alias 映射"
@@ -164,6 +206,13 @@ def main() -> int:
                 batch_output,
             ).items():
                 mappings.setdefault(pid, {}).update(alias_map)
+            for pid, reserved_alias in extract_reserved_start_aliases(
+                contract,
+                batch_output,
+            ).items():
+                scope = mappings.setdefault(pid, {})
+                if "trigger" in scope:
+                    scope[reserved_alias] = scope.pop("trigger")
     except (OSError, json.JSONDecodeError) as exc:
         print(
             json.dumps(

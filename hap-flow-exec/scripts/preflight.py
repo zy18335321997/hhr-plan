@@ -170,6 +170,7 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
 
     # 7. 字段引用与 option key 形状检查
     option_keys_by_field = {}
+    relation_fields = set()
     for ref in refs:
         fid = ref.get("fieldId", "")
         if not fid:
@@ -198,6 +199,8 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
             errors.append(
                 f"Relation 字段 {fid} 缺少 relation_worksheet_id"
             )
+        if ref.get("type") == "Relation":
+            relation_fields.add(fid)
 
     def check_option_values(value: object, path: str):
         if isinstance(value, dict):
@@ -212,6 +215,18 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
                     ):
                         errors.append(
                             f"{path}.value 的 option key 未登记: {item!r}"
+                        )
+            if field_id in relation_fields and "value" in value:
+                relation_values = value["value"]
+                relation_values = (
+                    relation_values
+                    if isinstance(relation_values, list)
+                    else [relation_values]
+                )
+                for item in relation_values:
+                    if not isinstance(item, str) or not is_uuid(item):
+                        errors.append(
+                            f"{path}.value 的 Relation 值必须是 rowId GUID: {item!r}"
                         )
             left = value.get("left")
             right = value.get("right")

@@ -10,6 +10,80 @@ import tempfile
 from pathlib import Path
 
 
+def _expected_main_nodes(nodes: list[dict]) -> list[dict]:
+    expected = []
+
+    def walk(items: list[dict]) -> None:
+        for node in items:
+            if not isinstance(node, dict):
+                continue
+            expected.append(node)
+            for path in (node.get("config") or {}).get("paths", []):
+                walk(
+                    [
+                        child
+                        for child in path.get("nodes", [])
+                        if isinstance(child, dict)
+                    ]
+                )
+
+    walk(nodes)
+    return expected
+
+
+def recover_from_structure(
+    pid: str,
+    nodes: list[dict],
+    hap_bin: str,
+    trigger_alias: str,
+) -> dict | None:
+    completed = subprocess.run(
+        [hap_bin, "--json", "workflow", "structure", pid],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    try:
+        structure = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    actual_by_name = {}
+    for node in structure.get("flowNodeMap", {}).values():
+        if not isinstance(node, dict) or not node.get("name"):
+            continue
+        actual_by_name.setdefault(node["name"], []).append(node)
+    mapping = {trigger_alias: structure.get("startEventId")}
+    created = []
+    for expected in _expected_main_nodes(nodes):
+        alias = expected.get("nodeAlias")
+        name = expected.get("name")
+        matches = actual_by_name.get(name, [])
+        if not alias or not name or len(matches) != 1:
+            return None
+        actual = matches[0]
+        mapping[alias] = actual.get("id")
+        item = {
+            "alias": alias,
+            "nodeId": actual.get("id"),
+            "nodeType": expected.get("nodeType"),
+        }
+        process = actual.get("processNode")
+        if isinstance(process, dict) and process.get("id"):
+            item["innerProcessId"] = process["id"]
+        created.append(item)
+    if not mapping.get(trigger_alias) or any(not value for value in mapping.values()):
+        return None
+    return {
+        "aliasToNodeId": mapping,
+        "created": created,
+        "pid": pid,
+        "verdict": "pass",
+        "recovered_from_structure": True,
+    }
+
+
 def atomic_write(path: str | Path, data: dict) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +131,14 @@ def run_batch_add(
         text=True,
     )
     if completed.returncode != 0:
+        recovered = recover_from_structure(
+            pid,
+            nodes,
+            hap_bin,
+            trigger_alias,
+        )
+        if recovered:
+            return recovered, 0
         return {
             "verdict": "fail",
             "code": "BATCH_ADD_FAILED",

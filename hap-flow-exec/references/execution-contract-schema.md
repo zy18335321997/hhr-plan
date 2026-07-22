@@ -91,6 +91,8 @@
 
 `type=Relation` 的引用必须包含 `relation_worksheet_id`。静态预检检查该字段存在，
 live preflight 必须与平台返回的关联目标工作表完全一致。
+Relation 写入值必须使用目标记录的 `rowId`（GUID），不能使用记录 `_id`；
+单关联字段在 save-action wire 中使用单个 rowId 字符串。
 
 ## 字段说明
 

@@ -316,6 +316,29 @@ class LivePreflightTests(unittest.TestCase):
             any("relation_worksheet_id" in error for error in static_errors)
         )
 
+    def test_relation_write_requires_row_id_guid(self):
+        contract = copy.deepcopy(load_contract())
+        contract["field_references"].append(
+            {
+                "fieldId": "relation-field",
+                "worksheet": "ws-purchase",
+                "fieldName": "来源",
+                "type": "Relation",
+                "relation_worksheet_id": "ws-source",
+            }
+        )
+        contract["nodes"][0]["config"]["fields"].append(
+            {
+                "fieldId": "relation-field",
+                "value": ["6a604fdfad0dd7e1ab8df52e"],
+            }
+        )
+        passed, errors = preflight.validate_static(contract)
+        self.assertFalse(passed)
+        self.assertTrue(
+            any("rowId GUID" in error for error in errors)
+        )
+
     def test_static_preflight_accepts_trigger_as_branch_source(self):
         contract = copy.deepcopy(load_contract())
         contract["nodes"][1]["config"]["paths"][0]["condition"]["left"][
@@ -371,6 +394,18 @@ class SaveActionTests(unittest.TestCase):
         self.assertEqual("node-001", tasks[0].node_id)
         self.assertEqual("pid-001", tasks[0].pid)
         self.assertEqual(9, tasks[0].data["fields"][0]["type"])
+
+    def test_single_relation_list_normalizes_to_row_id_string(self):
+        fields = save_actions._normalize_fields(
+            [
+                {
+                    "fieldId": "relation-field",
+                    "value": ["row-guid"],
+                }
+            ],
+            {"relation-field": 29},
+        )
+        self.assertEqual("row-guid", fields[0]["fieldValue"])
 
     def test_missing_pid_is_structured_blocker(self):
         argv = [
@@ -464,6 +499,30 @@ class SaveActionTests(unittest.TestCase):
         self.assertEqual("", tasks[0].pid)
         self.assertEqual("", tasks[0].node_id)
 
+    def test_literal_create_record_does_not_bind_source_node(self):
+        nodes = [
+            {
+                "alias": "create_log",
+                "nodeType": "create_record",
+                "config": {
+                    "worksheet": "ws-log",
+                    "target": {"node": "trigger"},
+                    "fields": [
+                        {"fieldId": "log-title", "value": "created"}
+                    ],
+                },
+            }
+        ]
+        tasks = save_actions.collect_tasks(
+            nodes,
+            {"create_log": "node-create", "trigger": "node-trigger"},
+            "main-pid",
+            {},
+            field_types={"log-title": 2},
+        )
+        self.assertEqual("", tasks[0].data["source_alias"])
+        self.assertEqual("", tasks[0].data["source_node_id"])
+
 
 class BatchRunnerTests(unittest.TestCase):
     def test_successful_batch_output_is_bound_to_pid(self):
@@ -482,6 +541,44 @@ class BatchRunnerTests(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertEqual("pid-001", result["pid"])
         self.assertEqual("pass", result["verdict"])
+
+    def test_failed_batch_recovers_mapping_from_read_only_structure(self):
+        failed = mock.Mock(returncode=1, stdout="", stderr="500")
+        structure = mock.Mock(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "startEventId": "trigger-id",
+                    "flowNodeMap": {
+                        "node-a": {
+                            "id": "node-a",
+                            "name": "节点A",
+                            "typeId": 6,
+                        }
+                    },
+                }
+            ),
+            stderr="",
+        )
+        with mock.patch.object(
+            run_batch_add.subprocess,
+            "run",
+            side_effect=[failed, structure],
+        ):
+            result, exit_code = run_batch_add.run_batch_add(
+                "pid-001",
+                [
+                    {
+                        "nodeAlias": "a",
+                        "nodeType": "update_record",
+                        "name": "节点A",
+                        "config": {},
+                    }
+                ],
+            )
+        self.assertEqual(0, exit_code)
+        self.assertTrue(result["recovered_from_structure"])
+        self.assertEqual("node-a", result["aliasToNodeId"]["a"])
 
     def test_structure_generates_pid_scoped_alias_maps(self):
         structure = {
@@ -688,6 +785,23 @@ class ExecutionStateTests(unittest.TestCase):
         ]
         with mock.patch.object(sys, "argv", argv):
             self.assertEqual(2, execution_state.main())
+
+    def test_partial_no_write_can_be_resolved_and_retried(self):
+        self.state["current_step"] = "save_actions"
+        execution_state.begin_step(self.state, "save_actions")
+        self.state, _ = execution_state.record_failure(
+            self.state,
+            "save_actions",
+            "mapping missing before SDK call",
+            2,
+        )
+        execution_state.resolve_partial(
+            self.state,
+            "save_actions",
+            "no_write",
+        )
+        self.assertIsNone(self.state["in_progress_step"])
+        self.assertEqual("ready", self.state["status"])
 
 
 if __name__ == "__main__":

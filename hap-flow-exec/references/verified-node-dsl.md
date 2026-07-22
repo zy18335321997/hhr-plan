@@ -110,13 +110,16 @@
   "name": "新增日志",
   "config": {
     "worksheet": "<wsId>",
-    "target": {"node": "<上游alias>"},
     "fields": [
       {"fieldId": "<字段ID>", "value": "<值>"}
     ]
   }
 }
 ```
+
+纯 literal 新增不设置 `target`/`selectNodeId`；只有字段值实际引用上游节点时才提供
+`target.node`。实机验证表明，literal 新增错误绑定 trigger 会导致 publish
+`warningType=103`。
 
 ### delete_record（删除记录）
 

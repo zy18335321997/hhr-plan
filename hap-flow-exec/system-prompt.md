@@ -318,11 +318,14 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/save_actions.py \
 
 > ⚠️ **不用系统字段**（如 wfstatus）——系统字段被平台拦截，saveNode 静默丢弃。设计方案中需要标记流程状态的字段用自定义单选字段替代。
 
-**fieldValue**：选项字段填 option key（UUID 或自定义 key），不是中文文字
+**fieldValue**：选项字段填 option key（UUID 或自定义 key），不是中文文字；
+Relation 字段填目标记录 `rowId`（GUID），不是记录 `_id`。单关联使用一个
+rowId 字符串。
 
 ⛔ **BLOCKING**：
 ```□ save-action 返回非 0 → 停。报告错误
 □ 遗漏任何 action 节点 → 停。列出遗漏节点
+□ 已发布流程修改 action 配置后未重新发布 → 停
 ```
 
 ✅ **Checkpoint**:

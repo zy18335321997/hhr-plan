@@ -182,3 +182,10 @@
   可能不返回 controls，字段必须读取 `worksheet fields`；真实 structure 会清空
   alias，内部 PID 映射需联合 contract 与 batch output。证据见
   `tests/evals/complex-live-sandbox-2026-07-21.json`。
+- 2026-07-22 剩余执行能力实机验收完成：get_single/get_multiple filter、
+  create_record、Relation 写入、子流程内部查询/分支/新增/更新、PID 分域映射、
+  部分 batch 写入恢复和一实例一记录幂等计数均通过。Relation 必须使用目标
+  `rowId`，节点修改后必须重新 publish 才会进入运行快照。
+- batch-add 在返回 500 时可能已创建全部骨架节点；`run_batch_add.py` 现在会只读
+  structure，并在名称唯一且全部节点齐全时恢复 alias 映射，而不是盲目重试。
+  证据见 `tests/evals/remaining-live-sandbox-2026-07-22.json`。

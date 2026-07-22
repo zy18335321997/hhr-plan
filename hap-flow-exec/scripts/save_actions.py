@@ -78,6 +78,12 @@ def _normalize_fields(
 ) -> list[dict]:
     out = []
     for f in (fields or []):
+        field_id = f.get("fieldId") or f.get("controlId", "")
+        field_type = (
+            f.get("type")
+            if f.get("type") is not None
+            else (field_types or {}).get(field_id)
+        )
         value = f.get("value")
         if isinstance(value, dict) and value.get("key"):
             value = value["key"]
@@ -86,18 +92,34 @@ def _normalize_fields(
                 item.get("key") if isinstance(item, dict) else item
                 for item in value
             ]
+        if field_type == 29 and isinstance(value, list) and len(value) == 1:
+            value = value[0]
         out.append({
-            "fieldId": f.get("fieldId") or f.get("controlId", ""),
-            "type": (
-                f.get("type")
-                if f.get("type") is not None
-                else (field_types or {}).get(
-                    f.get("fieldId") or f.get("controlId", "")
-                )
-            ),
+            "fieldId": field_id,
+            "type": field_type,
             "fieldValue": value if value is not None else f.get("fieldValue", ""),
         })
     return out
+
+
+def _fields_need_source(fields: list[dict]) -> bool:
+    def dynamic(value: object) -> bool:
+        if isinstance(value, dict):
+            if value.get("kind") in {
+                "field",
+                "record",
+                "template",
+                "nodeField",
+            }:
+                return True
+            if value.get("node"):
+                return True
+            return any(dynamic(child) for child in value.values())
+        if isinstance(value, list):
+            return any(dynamic(child) for child in value)
+        return False
+
+    return any(dynamic(field.get("value")) for field in fields)
 
 
 def _build_filter_wire(filt: dict, alias_to_id: dict[str, str]) -> list[dict]:
@@ -216,6 +238,10 @@ def collect_tasks(
             if nt in NODE_TYPE_ACTION:
                 target = config.get("target", {}) or {}
                 source_alias = target.get("node", "")
+                if nt == "create_record" and not _fields_need_source(
+                    config.get("fields", [])
+                ):
+                    source_alias = ""
                 t = Task()
                 t.kind = "action"
                 t.alias = alias

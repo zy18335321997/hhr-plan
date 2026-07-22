@@ -262,6 +262,29 @@ def record_failure(
     return state, decision
 
 
+def resolve_partial(
+    state: dict,
+    step: str,
+    outcome: str,
+) -> dict:
+    verify_contract_unchanged(state)
+    if state.get("in_progress_step") != step:
+        raise ValueError(
+            f"没有待处理的 in-progress step: {step}"
+        )
+    if outcome != "no_write":
+        raise ValueError(
+            "当前只支持 no_write；已发生写入时必须补偿或只读确认后再 advance"
+        )
+    state["in_progress_step"] = None
+    state["operation_id"] = None
+    state["status"] = "ready"
+    state["next_action"] = "run"
+    if state.get("errors"):
+        state["errors"][-1]["resolution"] = "no_write_confirmed"
+    return state
+
+
 def _load_json_argument(raw: str | None) -> dict:
     if not raw:
         return {}
@@ -306,6 +329,15 @@ def main() -> int:
     fail_parser.add_argument("--step", choices=STEPS, required=True)
     fail_parser.add_argument("--message", required=True)
     fail_parser.add_argument("--exit-code", type=int)
+
+    resolve_parser = subparsers.add_parser("resolve")
+    resolve_parser.add_argument("--state", required=True)
+    resolve_parser.add_argument("--step", choices=STEPS, required=True)
+    resolve_parser.add_argument(
+        "--outcome",
+        choices=("no_write",),
+        required=True,
+    )
     args = parser.parse_args()
 
     try:
@@ -343,7 +375,7 @@ def main() -> int:
             }
             result = advance(state, args.step, runtime)
             atomic_write(args.state, result)
-        else:
+        elif args.command == "fail":
             state = load_state(args.state)
             result, decision = record_failure(
                 state,
@@ -353,6 +385,14 @@ def main() -> int:
             )
             atomic_write(args.state, result)
             result = {"decision": decision, "state": result}
+        else:
+            state = load_state(args.state)
+            result = resolve_partial(
+                state,
+                args.step,
+                args.outcome,
+            )
+            atomic_write(args.state, result)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(
             json.dumps(
