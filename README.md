@@ -61,6 +61,11 @@ python3 scripts/extract-project.py "<项目名>" \
 
 脚本日志只显示 MCP origin；快照与项目 registry 不写入完整 MCP URL。运行新版脚本更新 registry 时，也会移除旧版本遗留的 `mcp_url` 字段。
 
+多平台（明道云私有部署）提取不写死域名：`scripts/platform_router.py parse/probe`
+解析与探测用户提供的平台 URL，`wf_fetch.py --url` 按该平台路由内部 API；
+`<项目>/platform.json` 只记录 origin 与 app_id，不含 Cookie、Token 或 HAP 凭证。
+详见 `references/tool-dispatch.md` 的「平台路由」一节。
+
 ## 项目数据命名
 
 项目目录默认位于 `~/Documents/workflow-output/<项目名>/`：
@@ -71,6 +76,7 @@ python3 scripts/extract-project.py "<项目名>" \
 - `_node_configs.json`：字段级节点详情
 - `_node_data.json`：供搜索和依赖图消费的标准化节点索引
 - `node_configs.json`：旧提取器或单工作流缓存，只通过 `wf_fetch.py` 按 PID 使用
+- `platform.json`：平台路由绑定（origin/app_id），不含凭证
 
 ## 两阶段合约
 

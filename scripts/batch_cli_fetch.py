@@ -30,6 +30,12 @@ def get_all_pids(project: str) -> list[str]:
     return sorted(pids)
 
 
+def _is_success(stdout: str) -> bool:
+    """wf_fetch.py 成功标记: legacy CLI 或平台路由两种 source。"""
+    return ('"source": "cli_wf-nodes"' in stdout
+            or '"source": "platform_internal"' in stdout)
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 batch_cli_fetch.py <项目名>", file=sys.stderr)
@@ -48,7 +54,7 @@ def main():
                 ["python3", str(SKILL / "wf_fetch.py"), project, pid, "--force-remote"],
                 capture_output=True, text=True, timeout=40
             )
-            if r.returncode == 0 and '"source": "cli_wf-nodes"' in r.stdout:
+            if r.returncode == 0 and _is_success(r.stdout):
                 success += 1
             else:
                 failed += 1

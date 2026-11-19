@@ -195,3 +195,50 @@
 - 18 类执行节点中，16 类已经通过可发布、可执行实机验证。delay 仅能创建结构，
   时长保存后归零且节点保持异常；code 的 test-code 可返回结果，但节点保存连续 500。
   这两类仍是明确执行器缺口，不能表述为“所有能力通过”。
+
+## 平台路由（任意明道云私有部署）
+
+### 目标
+
+- hhr-plan 远程提取不再假设单一平台：用户给 URL，自动推导 origin/域名、
+  读该域 Chrome cookie、调该平台内部 API。不写死任何域名。
+- 新增 `scripts/platform_router.py`（库 + argparse CLI），项目绑定文件
+  `<项目>/platform.json`（只存 origin + app_id，不含凭证）。
+
+### 设计决策
+
+- **source 值**：平台路由成功时 wf_fetch.py 输出 `"source": "platform_internal"`，
+  与 legacy `cli_wf-nodes` 并列；batch_cli_fetch.py 接受两种标记。
+- **跳过 MCP 取名**：平台路由路径 `save_cache(fetch_name=False)` —— MCP 键绑定
+  的 app 与目标平台可能不同，跨平台取名必然 20s 超时；名称靠 `--rebuild-names`
+  走平台列表接口批量补。
+- **auth.py 不改**：其 print 走 stdout，platform_router 用
+  `contextlib.redirect_stdout(sys.stderr)` 包裹调用，保持 CLI stdout 是纯 JSON。
+- **探测顺序**（列表接口各平台版本不一）：
+  1. `GET /api/workflow/v1/process/listAll?relationId=<app>`
+  2. `POST /api/process/getProcessList {"appId","pageIndex":1,"pageSize":1000}`
+  3. `GET /api/workflow/v1/process/list?relationId=<app>&pageSize=500`
+  首个"形状可识别"端点胜出（空列表=成功，表示应用没流），进程内缓存命中端点。
+- **legacy CLI 仅无绑定时走**：绑定存在但路由失败 → 直接回落 MCP，不误调
+  写死 work.jijiansmart.com 的 hap-bridge（几建行为零回归）。
+- **platform.json 只在成功时落盘**：--url 打错/未登录不污染绑定；url 优先于文件。
+- **extract-project 三处 cookie 域兜底删除**：域推导失败 → 打印 skip 并返回空，
+  不静默落回硬编码域名。
+
+### 开放问题
+
+- workflowedit 形态无 app_id，列表/count 无法路由（文档建议首次用 /app 形态）。
+- extract-project 写的 binding app_id 来自 MCP get_app_info（键绑定 app），
+  与 --base-url 平台可能不一致；跨平台时以 wf_fetch.py --url 重绑为准。
+
+### 实施记录
+
+- 2026-11-19：platform_router.py 新建（parse/probe CLI + 9 个库函数）；
+  wf_fetch.py 链路改为 缓存→平台路由→legacy CLI→MCP→none；
+  batch_cli_fetch 接受双 source；extract-project 删除硬编码域兜底并写 binding。
+
+- 2026-11-19 实机探测发现：fusion 平台 `v1/process/listAll` 返回分组形态
+  `{status, data: [{groupId, groupName, processList: [...]}]}`，不是平铺列表；
+  `_normalize_workflows` 增加嵌套 `processList` 拍平 + 去重后 list_count=356 与
+  平台实际工作流数一致。实机链路（probe 10 节点 / wf_fetch --url /
+  绑定复用 / rebuild-names 356 名称）全部通过。

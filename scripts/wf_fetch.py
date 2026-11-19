@@ -4,9 +4,13 @@
 Usage:
     python3 wf_fetch.py <项目名> <PID或工作流名>
     python3 wf_fetch.py <项目名> <PID> --force-remote    # 强制远程刷新
-    python3 wf_fetch.py <项目名> --rebuild-names          # 从 MCP 补全所有缓存的名称
+    python3 wf_fetch.py <项目名> <PID> --url <平台URL>    # 平台路由拉取（任意明道云私有部署）
+    python3 wf_fetch.py <项目名> --rebuild-names          # 从 MCP/平台列表补全所有缓存的名称
 
 缓存时自动: ①节点 ②meta(PID+名称+触发表) ③sheet_workflows.json ④name_index.json
+
+获取链路: 本地缓存 → 平台路由内部 API（platform.json 绑定或 --url）→
+          legacy hap-bridge CLI（仅无绑定时）→ MCP 兜底 → No data
 """
 
 import json
@@ -18,6 +22,9 @@ from pathlib import Path
 HAP = Path.home() / ".claude" / "mcp-servers" / "hap-bridge" / "cli.py"
 DATA = Path.home() / "Documents" / "workflow-output"
 SKILL = Path.home() / ".claude" / "skills" / "hhr-plan" / "scripts"
+
+sys.path.insert(0, str(SKILL))
+import platform_router  # noqa: E402
 
 
 _TRIGGER_MAP = {0: "工作表事件", 1: "自定义动作", 2: "定时触发", 3: "审批流程", 4: "子流程", 5: "封装业务流程"}
@@ -91,8 +98,22 @@ def fetch_workflow_name_by_pid(pid: str) -> str:
     return ""
 
 
-def fetch_all_workflow_names() -> dict[str, str]:
-    """Get ALL workflow PID→name mappings via MCP get_workflow_list."""
+def fetch_all_workflow_names(project: str = "") -> dict[str, str]:
+    """Get ALL workflow PID→name mappings via platform binding or MCP get_workflow_list."""
+    if project:
+        try:
+            binding = platform_router.resolve_binding(DATA / project)
+        except platform_router.PlatformError:
+            binding = None
+        if binding and binding.get("app_id"):
+            try:
+                workflows = platform_router.fetch_workflow_list(binding["origin"], binding["app_id"])
+                result = {w["id"]: w["name"] for w in workflows if w.get("id") and w.get("name")}
+                if result:
+                    print(f"[names] 平台列表 {binding['origin']}: {len(result)} workflows", file=sys.stderr)
+                    return result
+            except platform_router.PlatformError as e:
+                print(f"[names] 平台列表失败，回落 MCP: {e}", file=sys.stderr)
     data = _mcp_call("get_workflow_list", {})
     if not data:
         return {}
@@ -180,13 +201,14 @@ def _is_hex_pid(s: str) -> bool:
     return len(s) >= 24 and all(c in "0123456789abcdef" for c in s.lower())
 
 
-def save_cache(project: str, pid: str, nodes: list[dict], wf_name: str = "") -> tuple[Path, dict]:
+def save_cache(project: str, pid: str, nodes: list[dict], wf_name: str = "",
+               origin: str = "", fetch_name: bool = True) -> tuple[Path, dict]:
     d = DATA / project / pid
     d.mkdir(parents=True, exist_ok=True)
     cf = d / "node_configs.json"
     cf.write_text(json.dumps(nodes, ensure_ascii=False, indent=2))
     trigger = _extract_trigger(nodes)
-    if not wf_name:
+    if not wf_name and fetch_name:
         wf_name = fetch_workflow_name_by_pid(pid)
     meta = {
         "pid": pid, "name": wf_name, "node_count": len(nodes),
@@ -194,6 +216,8 @@ def save_cache(project: str, pid: str, nodes: list[dict], wf_name: str = "") -> 
         "trigger_type": trigger.get("trigger_type", ""),
         "cached_at": date.today().isoformat(),
     }
+    if origin:
+        meta["origin"] = origin
     (d / "workflow_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
     _update_sheet_index(project, pid, meta)
     _update_name_index(project, pid, wf_name)
@@ -208,8 +232,8 @@ def rebuild_names(project: str):
     3. Match against MCP map by name → get real PID → write meta + indexes
     """
     base = DATA / project
-    print("[rebuild-names] fetching all workflow names from MCP...", file=sys.stderr)
-    pid_to_name = fetch_all_workflow_names()
+    print("[rebuild-names] fetching all workflow names from MCP/platform...", file=sys.stderr)
+    pid_to_name = fetch_all_workflow_names(project)
     name_to_pid = {v: k for k, v in pid_to_name.items()}
     print(f"[rebuild-names] got {len(pid_to_name)} workflows from MCP", file=sys.stderr)
 
@@ -265,7 +289,7 @@ def rebuild_names(project: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 wf_fetch.py <项目名> <PID或工作流名> [--force-remote]", file=sys.stderr)
+        print("Usage: python3 wf_fetch.py <项目名> <PID或工作流名> [--force-remote] [--url <平台URL>]", file=sys.stderr)
         print("       python3 wf_fetch.py <项目名> --rebuild-names", file=sys.stderr)
         sys.exit(1)
 
@@ -280,6 +304,19 @@ def main():
 
     pid_or_name = sys.argv[2]
     force = "--force-remote" in sys.argv
+    url_arg = ""
+    if "--url" in sys.argv:
+        idx = sys.argv.index("--url")
+        if idx + 1 < len(sys.argv):
+            url_arg = sys.argv[idx + 1]
+
+    # 平台路由绑定: --url 优先于 <项目>/platform.json；URL 无效 → exit 2
+    binding = None
+    try:
+        binding = platform_router.resolve_binding(DATA / project, url_arg or None)
+    except platform_router.PlatformError as e:
+        print(f"[route] {e}", file=sys.stderr)
+        sys.exit(2)
 
     if not force:
         cached = find_local_cache(project, pid_or_name)
@@ -301,35 +338,63 @@ def main():
             print(f"[local cache] {wf_name or pid_or_name} ({trigger.get('trigger_sheet','?')} ← {len(data)} nodes)", file=sys.stderr)
             return
 
+    # ② 平台路由内部 API（绑定存在且输入为 24 位 hex PID）
     nodes = None
-    try:
-        r = subprocess.run(["python3", str(HAP), "wf-nodes", "--raw", pid_or_name],
-                          capture_output=True, text=True, timeout=30)
-        if r.returncode == 0 and r.stdout.strip():
-            raw = json.loads(r.stdout)
-            # CLI --raw returns {status, data: {flowNodeMap: {...}}}
-            if isinstance(raw, dict):
-                inner = raw.get("data", raw)
-                if isinstance(inner, dict) and "flowNodeMap" in inner:
-                    fm = inner["flowNodeMap"]
-                    nodes = list(fm.values()) if isinstance(fm, dict) else fm
-                elif isinstance(inner, list):
-                    nodes = inner
-            elif isinstance(raw, list):
-                nodes = raw
-    except Exception:
-        pass
-
+    can_route = bool(binding) and _is_hex_pid(pid_or_name)
+    if can_route:
+        try:
+            nodes = platform_router.fetch_workflow_nodes(binding["origin"], pid_or_name)
+        except platform_router.PlatformError as e:
+            print(f"[route] {e}", file=sys.stderr)
     if nodes:
-        cp, meta = save_cache(project, pid_or_name, nodes)
+        cp, meta = save_cache(project, pid_or_name, nodes,
+                              origin=binding["origin"], fetch_name=False)
+        # 路由成功才落盘绑定（失败不写，防错绑）
+        platform_router.save_binding(
+            DATA / project,
+            origin=binding["origin"], domain=binding.get("domain", ""),
+            app_id=binding.get("app_id", ""), pid=pid_or_name,
+            source=binding.get("source", "user_url"),
+        )
         trigger = _extract_trigger(nodes)
         print(json.dumps({
-            "source": "cli_wf-nodes", "cached_to": str(cp),
-            "node_count": len(nodes), "wf_name": meta.get("name",""),
+            "source": "platform_internal", "cached_to": str(cp),
+            "node_count": len(nodes), "wf_name": meta.get("name", ""),
             "trigger": trigger, "nodes": nodes
         }, ensure_ascii=False, indent=2))
-        print(f"[cli] {meta.get('name','?')} ({trigger.get('trigger_sheet','?')} ← {len(nodes)} nodes)", file=sys.stderr)
+        print(f"[platform] {binding['origin']} ({trigger.get('trigger_sheet','?')} ← {len(nodes)} nodes)", file=sys.stderr)
         return
+
+    # ③ legacy hap-bridge CLI（仅无平台绑定时走，几建行为零回归）
+    if not binding:
+        try:
+            r = subprocess.run(["python3", str(HAP), "wf-nodes", "--raw", pid_or_name],
+                              capture_output=True, text=True, timeout=30)
+            if r.returncode == 0 and r.stdout.strip():
+                raw = json.loads(r.stdout)
+                # CLI --raw returns {status, data: {flowNodeMap: {...}}}
+                if isinstance(raw, dict):
+                    inner = raw.get("data", raw)
+                    if isinstance(inner, dict) and "flowNodeMap" in inner:
+                        fm = inner["flowNodeMap"]
+                        nodes = list(fm.values()) if isinstance(fm, dict) else fm
+                    elif isinstance(inner, list):
+                        nodes = inner
+                elif isinstance(raw, list):
+                    nodes = raw
+        except Exception:
+            pass
+
+        if nodes:
+            cp, meta = save_cache(project, pid_or_name, nodes)
+            trigger = _extract_trigger(nodes)
+            print(json.dumps({
+                "source": "cli_wf-nodes", "cached_to": str(cp),
+                "node_count": len(nodes), "wf_name": meta.get("name",""),
+                "trigger": trigger, "nodes": nodes
+            }, ensure_ascii=False, indent=2))
+            print(f"[cli] {meta.get('name','?')} ({trigger.get('trigger_sheet','?')} ← {len(nodes)} nodes)", file=sys.stderr)
+            return
 
     mcp_data = _mcp_call("get_workflow_details", {"process_id": pid_or_name})
     if mcp_data:

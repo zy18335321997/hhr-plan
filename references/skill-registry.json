@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-21T14:05:42.508528+00:00",
+  "generated_at": "2026-11-19T10:30:41.287446+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -605,6 +605,12 @@
       "arguments": [
         "--workflow-id",
         "--lock-file"
+      ]
+    },
+    "platform_router.py": {
+      "description": "平台路由 — 任意明道云私有部署的 URL 解析、认证与内部 API 访问。",
+      "arguments": [
+        "--pid"
       ]
     },
     "rebuild_graph.py": {

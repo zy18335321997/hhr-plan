@@ -35,6 +35,8 @@ from datetime import datetime
 # Ensure scripts/ directory is in path for auth module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import platform_router
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -252,8 +254,10 @@ def extract_workflows_playwright(base_url: str, ws_names: set, app_id: str | Non
         return []
 
     # Get Chrome cookies — strip port from domain (cookies are stored without port)
-    domain_match = re.match(r"https?://([^/:]+)", base_url)
-    domain = domain_match.group(1) if domain_match else "work.jijiansmart.com"
+    domain = platform_router.derive_cookie_domain(base_url)
+    if not domain:
+        print("  [skip] Cannot derive cookie domain from base_url")
+        return []
     print(f"  Chrome domain: {domain}")
     try:
         cj = browser_cookie3.chrome(domain_name=domain)
@@ -689,8 +693,10 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
         return {}
 
     # Extract domain (without port) for cookie lookup
-    domain_match = re.match(r"https?://([^/:]+)", base_url)
-    domain = domain_match.group(1) if domain_match else "work.jijiansmart.com"
+    domain = platform_router.derive_cookie_domain(base_url)
+    if not domain:
+        print("  [skip] Cannot derive cookie domain from base_url")
+        return {}
     headers = auth.get_auth_headers(domain)
     if not headers:
         print(f"  [skip] No auth for domain: {domain} — log into 明道云 in Chrome first")
@@ -899,8 +905,10 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     """
     import auth
 
-    domain_match = re.match(r"https?://([^/:]+)", base_url)
-    domain = domain_match.group(1) if domain_match else "work.jijiansmart.com"
+    domain = platform_router.derive_cookie_domain(base_url)
+    if not domain:
+        print("  [skip] Node detail extraction: cannot derive cookie domain")
+        return {}
     headers = auth.get_auth_headers(domain)
     if not headers:
         print("  [skip] Node detail extraction: no auth")
@@ -1395,6 +1403,7 @@ def main():
             print(f"  [error] 无法解析 PID 文件: {e}")
 
     # Phase 2b: Playwright fallback when MCP returns empty (workflow-analyzer approach)
+    app_id = None
     if not wf_list and not skip_mcp:
         print("--- Phase 2b: Playwright 工作流发现 (MCP 返回空, workflow-analyzer 方式) ---")
         app_id = get_app_id_from_mcp(mcp_url)
@@ -1470,6 +1479,23 @@ def main():
     with open(os.path.join(project_dir, "project-snapshot.md"), "w") as f:
         f.write(snapshot)
     print("  project-snapshot.md")
+
+    # 4b. 平台绑定: 只记录 origin + app_id，不含任何凭证；失败只 degrade 不中断提取
+    if base_url:
+        try:
+            binding_app_id = app_id or ""
+            if not binding_app_id and mcp_url and not skip_mcp:
+                binding_app_id = get_app_id_from_mcp(mcp_url) or ""
+            platform_router.save_binding(
+                project_dir,
+                origin=base_url,
+                domain=platform_router.derive_cookie_domain(base_url),
+                app_id=binding_app_id,
+                source="extract-project",
+            )
+            print("  platform.json")
+        except Exception as e:
+            print(f"  [skip] platform.json 写入失败: {e}")
 
     # 5. Registry
     update_registry(project_name, len(ws_map), len(wf_list), bool(mcp_url))

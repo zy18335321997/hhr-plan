@@ -92,6 +92,7 @@ references:
 - `_node_configs.json`：`extract-project.py` 生成的字段级节点详情。
 - `_node_data.json`：由 `generate_node_data.py` 从现有提取物生成的标准化节点索引，供搜索和依赖图消费。
 - `node_configs.json`：旧提取器或单工作流缓存格式；只通过 `wf_fetch.py` 按 PID 读取，不把它与上述全项目文件混称。
+- `platform.json`：平台路由绑定（origin + app_id），不含任何凭证。
 
 ## 5. Outcome Contract
 
@@ -145,5 +146,6 @@ Mode A/B 的固定交接顺序：
 
 - 项目提取必须显式提供 `--mcp-url` 或设置 `HAP_MCP_URL`；仓库不提供默认 MCP URL。
 - 日志、快照、checkpoint、registry 和设计文档不得记录凭证化 URL。
+- `platform.json` 仅记录平台 origin 与 app_id，不含 Cookie、Token 或 HAP 凭证。
 - Mode B 的影响面超过规范阈值、项目路径不明确、节点数据与 PID 不匹配、Agent 失败、合约转换失败时均停止。
 - 详细门控内容只引用 `references/unified-design-spec.md`，本入口不复制门控清单。

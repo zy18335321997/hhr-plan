@@ -72,14 +72,45 @@
 ## 节点获取（wf_fetch.py 一站式）
 
 ```
-python3 $SKILL/wf_fetch.py <项目名> <PID或工作流名>
+python3 $SKILL/wf_fetch.py <项目名> <PID或工作流名> [--url <平台URL>]
 
 优先级:
   ① 本地 node_configs.json 命中 → 直接返回（离线秒返）
-  ② 本地无缓存 → "正在通过 CLI 获取节点配置…" → cli.py wf-nodes → 自动写缓存
-  ③ CLI 不可用 → "CLI 不可用，降级到 MCP…" → cli.py call get_workflow_details
-  ④ --force-remote → 跳过本地缓存，强制从远程拉取并更新缓存
+  ② 平台路由内部 API（<项目>/platform.json 绑定或 --url 指定平台，
+     且输入为 24 位 hex PID）→ 直接调该平台 /api/workflow/flowNode/get
+     → 自动写缓存 + 写绑定（source=platform_internal）
+  ③ 无平台绑定时 → cli.py wf-nodes（legacy，内部 BASE 写死 work.jijiansmart.com）
+  ④ 前两者不可用 → MCP get_workflow_details 兜底（名称+入参，无节点）
+  ⑤ --force-remote → 跳过本地缓存，强制从远程拉取并更新缓存
 ```
+
+## 平台路由（多明道云私有部署）
+
+hhr-plan 原生支持任意明道云私有部署：用户给 URL，自动推导 origin/域名、
+读该域 Chrome Cookie（md_pss_id → Authorization）、调该平台内部 API。
+不写死任何域名，按用户提供的输入路由。
+
+| 需要 | 命令 |
+|------|------|
+| 解析平台 URL | `python3 $SKILL/platform_router.py parse <平台URL>` |
+| 探测可达性 | `python3 $SKILL/platform_router.py probe <平台URL> [--pid <PID>]` |
+| 路由拉取节点 | `python3 $SKILL/wf_fetch.py <项目名> <PID> --url <平台URL>` |
+| 复用绑定拉取 | `python3 $SKILL/wf_fetch.py <项目名> <PID>`（读 <项目>/platform.json） |
+
+URL 形态: `http://<host>/app/<app_id>/workflow` 或
+`http://<host>/workflowedit/<pid>`。首次建议用 `/app/<app_id>/workflow`
+形态——workflowedit 形态没有 app_id，列表/count 接口无法路由。
+
+工作流列表接口按序探测（各平台版本不一，首个"形状可识别"的胜出并缓存，
+空列表 = 成功 = 应用没流）：
+
+1. `GET /api/workflow/v1/process/listAll?relationId=<app_id>`
+2. `POST /api/process/getProcessList {"appId","pageIndex":1,"pageSize":1000}`
+3. `GET /api/workflow/v1/process/list?relationId=<app>&pageSize=500`
+
+平台绑定 `<项目>/platform.json` 只记录 origin/domain/app_id/pid/source/saved_at，
+不含 Cookie、Token 或 HAP 凭证。`--url` 优先于文件；路由成功才落盘，
+失败不污染绑定（防错绑）。
 
 ## 线上实时数据（MCP，始终可用）
 
