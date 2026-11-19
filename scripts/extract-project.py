@@ -40,6 +40,7 @@ from datetime import datetime
 # Ensure scripts/ directory is in path for auth module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import field_mappings
 import mcp_workflow_structure
 import platform_router
 
@@ -128,18 +129,15 @@ def summarize_flow_nodes(flow_node_map) -> dict:
                     reads.add(target)
                 elif any(keyword in name for keyword in _WRITE_NAME_KEYWORDS):
                     writes.add(target)
-                fields = node.get("fields") or []
-                if isinstance(fields, list):
-                    field_names = []
-                    for field in fields:
-                        if not isinstance(field, dict):
-                            continue
-                        field_name = field.get("fieldName") or field.get("fieldId") or ""
-                        field_value = field.get("fieldValue", "")
-                        if field_name or field_value:
-                            field_names.append(f"{field_name or '?'}:{str(field_value)[:50]}")
-                    if field_names:
-                        crud_mappings.append((name, target, field_names))
+                mapping = field_mappings.resolve_field_mappings(node)
+                if mapping and mapping.get("assignments"):
+                    crud_mappings.append({
+                        "node_name": name,
+                        "target": target,
+                        "update_object": mapping.get("update_object"),
+                        "readable": mapping.get("lines") or [],
+                        "raw": field_mappings.raw_assignment_summary(mapping),
+                    })
             continue
         if tid in READ_NODE_TYPES:
             target = app_name or src_entity
@@ -925,12 +923,13 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
 
 def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str,
                                 merge_existing: bool = False) -> dict:
-    """Phase 3b: For each create/update node, call getNodeDetail to get fieldValues.
+    """Call getNodeDetail for create/update nodes and save readable field mappings.
 
-    Reads nodes.json (saved by extract_workflow_nodes), calls getNodeDetail
-    for type_id 6 create/update nodes, and saves _node_configs.json.
+    Reads nodes.json, calls getNodeDetail for type_id 6 create/update nodes,
+    and saves _node_configs.json. field_mappings is the editor line
+    「将字段 X 设为 Y」; controls, fields, and formulaMap keep the raw ids.
 
-    Returns {pid: [{nodeId, nodeName, typeId, targetSheet, controls: [...]}]}
+    Returns {pid: [{node_id, node_name, type_id, target_sheet, controls, field_mappings}]}
     """
     import auth
 
@@ -957,7 +956,7 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
         raw_nodes = json.load(f)
 
     # Collect all create/update nodes across all workflows
-    detail_jobs = []  # (pid, wf_name, node_id, type_id, node_name)
+    detail_jobs = []  # (pid, wf_name, node_id, type_id, node_name, type_label, node)
     for pid, wf_data in raw_nodes.items():
         if not isinstance(wf_data, dict):
             continue
@@ -965,14 +964,15 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
         for nkey, node in wf_data.items():
             if nkey.startswith("_") or not isinstance(node, dict):
                 continue
-            if is_field_detail_node(node):
+            if is_field_detail_node(node) or field_mappings.needs_node_detail(node):
                 detail_jobs.append((
                     pid,
                     wf_name,
-                    node.get("id", nkey),
+                    node.get("nodeId") or node.get("id") or nkey,
                     node.get("typeId", DATA_OPERATION_TYPE),
                     node.get("name", ""),
                     detail_type_label(node),
+                    node,
                 ))
 
     if not detail_jobs:
@@ -983,7 +983,7 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     node_configs = {}
     errors = 0
 
-    for i, (pid, wf_name, node_id, type_id, node_name, type_label) in enumerate(detail_jobs):
+    for i, (pid, wf_name, node_id, type_id, node_name, type_label, node) in enumerate(detail_jobs):
         try:
             query = urllib.parse.urlencode({
                 "processId": pid,
@@ -1006,10 +1006,13 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
             target_sheet = ""
             controls = []
 
-            if isinstance(app_dtos, list) and app_dtos:
+            if isinstance(app_dtos, list) and app_dtos and isinstance(app_dtos[0], dict):
                 app0 = app_dtos[0]
                 target_sheet = app0.get("appName", "")
-                controls = app0.get("controls", [])
+                if isinstance(app0.get("controls"), list):
+                    controls = app0.get("controls")
+            if not controls and isinstance(ddata.get("controls"), list):
+                controls = ddata.get("controls")
 
             # Also check flowNodeList for field mapping
             flow_node_list = ddata.get("flowNodeList", [])
@@ -1037,9 +1040,25 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
                     "type": ctrl.get("type", ""),
                     "required": ctrl.get("required", False),
                     "dataSource": ctrl.get("dataSource", ""),
+                    "sourceEntityName": ctrl.get("sourceEntityName", ""),
                     "options": ctrl.get("options", [])[:20],  # limit option list
                     "desc": ctrl.get("desc", ""),
                 })
+
+            detail_view = field_mappings.prepare_detail(ddata)
+            if not detail_view.get("controls") and controls:
+                detail_view["controls"] = controls
+            mapping = field_mappings.resolve_field_mappings(node, detail_view)
+            if mapping:
+                config["field_mappings"] = mapping
+            if detail_view.get("fields"):
+                config["fields"] = detail_view.get("fields")
+            elif node.get("fields"):
+                config["fields"] = node.get("fields")
+            if detail_view.get("formulaMap"):
+                config["formulaMap"] = detail_view.get("formulaMap")
+            if detail_view.get("selectNodeObj"):
+                config["selectNodeObj"] = detail_view.get("selectNodeObj")
 
             if pid not in node_configs:
                 node_configs[pid] = []
@@ -1370,12 +1389,212 @@ def _fetch_legacy_flow(base_url, process_id):
     )
 
 
+_DETAIL_TYPE_BY_NODE = {
+    "create_record": DATA_OPERATION_TYPE,
+    "add_record": DATA_OPERATION_TYPE,
+    "update_record": DATA_OPERATION_TYPE,
+    "batch_create": DATA_OPERATION_TYPE,
+    "batch_update": DATA_OPERATION_TYPE,
+}
+
+
+def _detail_type_id(node) -> int:
+    sources = [node]
+    if isinstance(node, dict) and isinstance(node.get("config"), dict):
+        sources.append(node["config"])
+    for source in sources:
+        if not isinstance(source, dict) or source.get("typeId") is None:
+            continue
+        try:
+            return int(source["typeId"])
+        except (TypeError, ValueError):
+            continue
+    node_type = ""
+    if isinstance(node, dict):
+        node_type = str(node.get("nodeType") or "").lower()
+    return _DETAIL_TYPE_BY_NODE.get(node_type, DATA_OPERATION_TYPE)
+
+
+def _apply_flow_summaries(snapshot, node_data) -> None:
+    """Fill reads/writes from a legacy flowNodeMap, and readable CRUD lines either way."""
+    for pid, structure in (snapshot.get("processes") or {}).items():
+        if pid not in node_data or not isinstance(structure, dict):
+            continue
+        flow_map = structure.get("flowNodeMap")
+        if isinstance(flow_map, dict) and flow_map:
+            summary = summarize_flow_nodes(flow_map)
+            node_data[pid].update({
+                "node_count": summary["node_count"],
+                "reads": sorted(summary["reads"]),
+                "writes": sorted(summary["writes"]),
+                "crud_field_mappings": summary["crud_field_mappings"],
+                "query_empty_actions": summary["query_empty_actions"],
+                "approval_count": summary["approval_count"],
+                "trigger_sheet": summary.get("trigger_sheet") or node_data[pid].get("worksheet") or "",
+            })
+            continue
+        mappings = []
+        for node in mcp_workflow_structure.iter_structure_nodes(structure):
+            mapping = field_mappings.resolve_field_mappings(node)
+            if not mapping or not mapping.get("assignments"):
+                continue
+            config = node.get("config") if isinstance(node.get("config"), dict) else {}
+            target = (
+                config.get("appName")
+                or config.get("sourceEntityName")
+                or node.get("appName")
+                or (mapping.get("update_object") or {}).get("worksheet")
+                or ""
+            )
+            mappings.append({
+                "node_name": node.get("name") or "",
+                "target": target,
+                "update_object": mapping.get("update_object"),
+                "readable": mapping.get("lines") or [],
+                "raw": field_mappings.raw_assignment_summary(mapping),
+            })
+        if mappings:
+            node_data[pid]["crud_field_mappings"] = mappings
+
+
+def _load_node_configs(project_dir) -> dict:
+    path = os.path.join(project_dir, "_node_configs.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _mapping_resolved(row) -> bool:
+    mapping = row.get("field_mappings") if isinstance(row, dict) else None
+    if not isinstance(mapping, dict):
+        return False
+    assignments = mapping.get("assignments") or []
+    if not assignments:
+        return False
+    return not any(isinstance(item, dict) and item.get("unresolved") for item in assignments)
+
+
+def _field_detail(flat, node) -> dict:
+    fields = flat.get("fields") if isinstance(flat.get("fields"), list) and flat.get("fields") else None
+    if fields is None:
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        if isinstance(config.get("fields"), list):
+            fields = config.get("fields")
+        elif isinstance(node.get("fields"), list):
+            fields = node.get("fields")
+    controls = []
+    raw_controls = flat.get("controls") if isinstance(flat.get("controls"), list) else []
+    for control in raw_controls:
+        if not isinstance(control, dict):
+            continue
+        controls.append({
+            "controlId": control.get("controlId") or control.get("id") or "",
+            "controlName": control.get("controlName") or control.get("name") or "",
+            "type": control.get("type", ""),
+            "sourceEntityName": control.get("sourceEntityName") or "",
+        })
+    return {
+        "fields": fields or [],
+        "formulaMap": flat.get("formulaMap") if isinstance(flat.get("formulaMap"), dict) else {},
+        "selectNodeObj": flat.get("selectNodeObj") if isinstance(flat.get("selectNodeObj"), dict) else {},
+        "controls": controls,
+    }
+
+
+def _enrich_readable_field_mappings(base_url, project_dir, snapshot) -> bool:
+    """Resolve $nodeId-controlId$ and unnamed relation fields via getNodeDetail.
+
+    Structure fetch is unchanged. This only runs for create/update rows whose
+    saved mapping still contains an unresolved formula token or a relation
+    field that has no control display name.
+    """
+    configs = _load_node_configs(project_dir)
+    jobs = []
+    for pid, structure in (snapshot.get("processes") or {}).items():
+        for node in mcp_workflow_structure.iter_structure_nodes(structure):
+            if not field_mappings.needs_node_detail(node):
+                continue
+            node_id = str(node.get("nodeId") or node.get("id") or "")
+            rows = configs.get(pid) if isinstance(configs.get(pid), list) else []
+            if any(isinstance(row, dict) and row.get("node_id") == node_id and _mapping_resolved(row) for row in rows):
+                continue
+            if node_id:
+                jobs.append((str(pid), node_id, node, structure))
+    if not jobs:
+        return False
+
+    print(f"--- Phase 3d: getNodeDetail（解析将字段/设为，{len(jobs)} 个节点） ---")
+    changed = False
+    stop = False
+    for pid, node_id, node, structure in jobs:
+        if stop:
+            break
+        try:
+            query = urllib.parse.urlencode({
+                "processId": pid,
+                "nodeId": node_id,
+                "flowNodeType": _detail_type_id(node),
+            })
+            payload = platform_router.fetch_json(
+                base_url,
+                f"/api/workflow/flowNode/getNodeDetail?{query}",
+                domain=platform_router.derive_cookie_domain(base_url),
+            )
+        except Exception as exc:
+            print(f"  [skip] 字段映射 {node_id}: {mcp_workflow_structure.public_error(exc)}")
+            if "未登录" in str(exc):
+                stop = True
+            continue
+        flat = field_mappings.prepare_detail(payload)
+        field_mappings.merge_detail_into(node, flat)
+        raw_map = structure.get("flowNodeMap") if isinstance(structure, dict) else None
+        if isinstance(raw_map, dict) and isinstance(raw_map.get(node_id), dict):
+            field_mappings.merge_detail_into(raw_map[node_id], flat)
+        mapping = field_mappings.resolve_field_mappings(node)
+        if not mapping:
+            continue
+        rows = configs.get(pid)
+        if not isinstance(rows, list):
+            rows = []
+            configs[pid] = rows
+        detail_view = _field_detail(flat, node)
+        updated = False
+        for row in rows:
+            if isinstance(row, dict) and row.get("node_id") == node_id:
+                row["field_mappings"] = mapping
+                row["field_detail"] = detail_view
+                updated = True
+        if not updated:
+            rows.append({
+                "pid": pid,
+                "node_id": node_id,
+                "node_name": node.get("name") or "",
+                "field_mappings": mapping,
+                "field_detail": detail_view,
+            })
+        changed = True
+        time.sleep(0.15)
+
+    if changed:
+        path = os.path.join(project_dir, "_node_configs.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(configs, handle, ensure_ascii=False, indent=2)
+        print("  可读字段映射已写入 _node_configs.json")
+    return changed
+
+
 def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_file=None,
                            process_id="", skip_mcp=False) -> dict:
     """Node config via MCP V3 structure, then legacy flowNode/get for nested flows.
 
     get_workflow_details is not used here. It has no node structure. Chrome
-    getNodeDetail runs only for nodes whose config is still empty.
+    getNodeDetail still fills nodes whose config is empty. Create/update nodes
+    that already have fields, but only as raw ids or ``$nodeId-controlId$``
+    tokens, get one more getNodeDetail call so the saved mapping matches the
+    editor's 将字段 / 设为 lines.
     """
     if nodes_file:
         return extract_workflow_nodes_from_file(nodes_file, wf_list)
@@ -1428,20 +1647,7 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
     if snapshot.get("processes") or snapshot.get("gaps"):
         mcp_workflow_structure.persist(project_dir, snapshot)
         node_data = mcp_workflow_structure.node_data_from_snapshot(snapshot, wf_list)
-        for pid, structure in (snapshot.get("processes") or {}).items():
-            flow_map = structure.get("flowNodeMap")
-            if not isinstance(flow_map, dict) or not flow_map or pid not in node_data:
-                continue
-            summary = summarize_flow_nodes(flow_map)
-            node_data[pid].update({
-                "node_count": summary["node_count"],
-                "reads": sorted(summary["reads"]),
-                "writes": sorted(summary["writes"]),
-                "crud_field_mappings": summary["crud_field_mappings"],
-                "query_empty_actions": summary["query_empty_actions"],
-                "approval_count": summary["approval_count"],
-                "trigger_sheet": summary.get("trigger_sheet") or node_data[pid].get("worksheet") or "",
-            })
+        _apply_flow_summaries(snapshot, node_data)
 
     empty_config = [
         gap for gap in snapshot.get("gaps") or []
@@ -1454,6 +1660,8 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
         )
     elif not node_data and not nodes_file:
         print("  [skip] 无 MCP 结构，也没有可用的 Base URL / 节点文件")
+    if base_url and snapshot.get("processes") and _enrich_readable_field_mappings(base_url, project_dir, snapshot):
+        _apply_flow_summaries(snapshot, node_data)
     return node_data
 
 
@@ -1602,7 +1810,7 @@ def main():
             "worksheet": "",
         })
 
-    # Phase 3: MCP structure first; Chrome getNodeDetail only for gaps.
+    # Phase 3: MCP structure first. getNodeDetail fills empty config and unresolved 将字段/设为 mappings.
     print("--- Phase 3: 工作流节点 ---")
     node_data = collect_workflow_nodes(
         project_dir,

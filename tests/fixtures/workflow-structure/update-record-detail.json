@@ -1,0 +1,61 @@
+{
+  "_comment": "Synthetic stand-in for the 更新记录 editor screenshot. No live process id, host, cookie, or credential. Persisted field_mappings.lines for this node are: 更新对象：当前流程中的节点对象 工作表事件触发 / 工作表 EmpAwards_员工奖项; 将字段 [关联表] EmpBasicInfo_员工基本信息 设为 查询工作表 / 工作表 EmpBasicInfo_员工基本信息; 将字段 [文本] MainID 设为 查询工作表 / 员工工号. flow_node is what flowNode/get already has (relation nodeName plus a $nodeId-controlId$ token). node_detail is what getNodeDetail adds: selectNodeObj, formulaMap, controls (type 29 关联表, type 2 文本), and the query node's worksheet.",
+  "flow_node": {
+    "id": "nodeUpdate",
+    "nodeId": "nodeUpdate",
+    "name": "更新记录",
+    "typeId": 6,
+    "actionId": 2,
+    "selectNodeId": "nodeTrigger",
+    "selectNodeName": "工作表事件触发",
+    "appName": "EmpAwards_员工奖项",
+    "appTypeName": "工作表",
+    "fields": [
+      {
+        "fieldId": "relBasic",
+        "nodeId": "nodeQuery",
+        "nodeName": "查询工作表"
+      },
+      {
+        "fieldId": "textMain",
+        "fieldValue": "$nodeQuery-ctrlEmpNo$"
+      }
+    ]
+  },
+  "node_detail": {
+    "selectNodeObj": {
+      "nodeId": "nodeTrigger",
+      "nodeName": "工作表事件触发",
+      "appName": "EmpAwards_员工奖项",
+      "appTypeName": "工作表"
+    },
+    "formulaMap": {
+      "nodeQuery-ctrlEmpNo": {
+        "nodeName": "查询工作表",
+        "name": "员工工号",
+        "type": 2
+      }
+    },
+    "controls": [
+      {
+        "controlId": "relBasic",
+        "controlName": "EmpBasicInfo_员工基本信息",
+        "type": 29,
+        "sourceEntityName": "EmpBasicInfo_员工基本信息"
+      },
+      {
+        "controlId": "textMain",
+        "controlName": "MainID",
+        "type": 2
+      }
+    ],
+    "flowNodeList": [
+      {
+        "nodeId": "nodeQuery",
+        "nodeName": "查询工作表",
+        "appName": "EmpBasicInfo_员工基本信息",
+        "appTypeName": "工作表"
+      }
+    ]
+  }
+}
