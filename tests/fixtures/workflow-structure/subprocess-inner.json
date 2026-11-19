@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "data": {
+    "processId": "proc-sub-inner",
+    "name": "子流程示例",
+    "description": "",
+    "published": true,
+    "trigger": {
+      "nodeAlias": "trigger",
+      "nodeId": "sub-trigger",
+      "triggerType": "subprocess",
+      "name": "子流程开始",
+      "config": {"source": "parent"}
+    },
+    "nodes": [
+      {
+        "nodeAlias": "create",
+        "nodeId": "sub-create",
+        "nodeType": "create_record",
+        "name": "新增记录",
+        "prevNode": {"nodeAlias": "trigger"},
+        "parentNode": {},
+        "config": {"worksheetId": "ws-child", "fields": [{"fieldId": "f2"}]}
+      }
+    ]
+  }
+}

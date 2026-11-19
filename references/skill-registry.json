@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T11:18:22.518377+00:00",
+  "generated_at": "2026-11-19T11:51:43.715720+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -599,6 +599,10 @@
         "--workflow",
         "--output"
       ]
+    },
+    "mcp_workflow_structure.py": {
+      "description": "Fetch workflow node config through MCP get_workflow_structure.",
+      "arguments": []
     },
     "platform-validate.py": {
       "description": "平台只读校验占位入口。",

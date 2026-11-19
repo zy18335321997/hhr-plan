@@ -10,8 +10,13 @@ Full project extraction — 替代 workflow-analyzer。
   - 更新 projects_registry.json  多项目注册表
 
 用法:
-  # 显式指定 MCP URL
+  # 显式指定 MCP URL。get_workflow_structure 会拉取节点 config；
+  # get_workflow_details 只有触发流程元数据，不够用。
   python3 extract-project.py <项目名> --mcp-url "https://xxx/mcp?key=yyy"
+
+  # 只拉一个流程（也接受 /workflowedit/<processId> 形式的 --base-url）
+  python3 extract-project.py <项目名> --mcp-url "https://xxx/mcp?key=yyy" \
+    --process-id "<processId>"
 
   # 或通过环境变量
   HAP_MCP_URL="https://xxx/mcp?key=yyy" python3 extract-project.py <项目名>
@@ -35,6 +40,7 @@ from datetime import datetime
 # Ensure scripts/ directory is in path for auth module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import mcp_workflow_structure
 import platform_router
 
 # Node roles come from scripts/verify-platform.py TYPE_NAMES.
@@ -754,7 +760,8 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
 
 
 
-def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str = "") -> dict[str, dict]:
+def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str = "",
+                           merge_existing: bool = False) -> dict[str, dict]:
     """For each workflow, get node structure via internal API.
 
     Returns {process_id: {name, worksheet, nodes, reads, writes, subs,
@@ -898,15 +905,26 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
 
     print(f"  Nodes extracted: {len(node_data)}/{total} ({errors} errors)")
 
-    # Save raw nodes.json for Phase 3b detail extraction
+    # Save raw nodes.json for Phase 3b detail extraction.
+    # merge_existing keeps MCP structure rows for processes this cookie pass did not fetch.
     nodes_file = os.path.join(project_dir, "nodes.json")
+    if merge_existing and os.path.exists(nodes_file):
+        try:
+            with open(nodes_file, encoding="utf-8") as existing:
+                previous = json.load(existing)
+            if isinstance(previous, dict):
+                previous.update(raw_nodes)
+                raw_nodes = previous
+        except (OSError, json.JSONDecodeError):
+            pass
     with open(nodes_file, "w") as f:
         json.dump(raw_nodes, f, ensure_ascii=False, indent=2)
 
     return node_data
 
 
-def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str) -> dict:
+def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str,
+                                merge_existing: bool = False) -> dict:
     """Phase 3b: For each create/update node, call getNodeDetail to get fieldValues.
 
     Reads nodes.json (saved by extract_workflow_nodes), calls getNodeDetail
@@ -1034,8 +1052,22 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
         except Exception as e:
             errors += 1
 
-    # Save
+    # Save. Cookie rows replace the same node_id; MCP rows for other nodes stay.
     configs_file = os.path.join(project_dir, "_node_configs.json")
+    if merge_existing and os.path.exists(configs_file):
+        try:
+            with open(configs_file, encoding="utf-8") as existing:
+                previous = json.load(existing)
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+        if isinstance(previous, dict):
+            for pid, items in node_configs.items():
+                prior = previous.get(pid) if isinstance(previous.get(pid), list) else []
+                by_id = {item.get("node_id"): item for item in prior if isinstance(item, dict)}
+                for item in items:
+                    by_id[item.get("node_id")] = item
+                previous[pid] = list(by_id.values())
+            node_configs = previous
     with open(configs_file, "w") as f:
         json.dump(node_configs, f, ensure_ascii=False, indent=2)
 
@@ -1322,6 +1354,109 @@ def update_registry(project_name: str, ws_count: int, wf_count: int,
     print(f"  Registry updated: {registry_path}")
 
 
+def _workflow_pid(workflow: dict) -> str:
+    if not isinstance(workflow, dict):
+        return ""
+    return str(workflow.get("id") or workflow.get("processId") or "").strip()
+
+
+def _fetch_legacy_flow(base_url, process_id):
+    """GET flowNode/get the way hap-cli ``workflow structure`` does. No count cap."""
+    query = urllib.parse.urlencode({"processId": process_id})
+    return platform_router.fetch_json(
+        base_url,
+        f"/api/workflow/flowNode/get?{query}",
+        domain=platform_router.derive_cookie_domain(base_url),
+    )
+
+
+def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_file=None,
+                           process_id="", skip_mcp=False) -> dict:
+    """Node config via MCP V3 structure, then legacy flowNode/get for nested flows.
+
+    get_workflow_details is not used here. It has no node structure. Chrome
+    getNodeDetail runs only for nodes whose config is still empty.
+    """
+    if nodes_file:
+        return extract_workflow_nodes_from_file(nodes_file, wf_list)
+
+    roots = [process_id] if process_id else []
+    if not roots:
+        for workflow in wf_list or []:
+            pid = _workflow_pid(workflow)
+            if pid and pid not in roots:
+                roots.append(pid)
+
+    node_data = {}
+    if mcp_url and not skip_mcp and roots:
+        print("--- Phase 3a: MCP get_workflow_structure ---")
+        tools = init_and_list_tools(mcp_url)
+        snapshot = mcp_workflow_structure.extract_structures(
+            roots,
+            tools,
+            lambda name, args: call_tool(mcp_url, name, args),
+        )
+        if snapshot.get("tool"):
+            print(
+                f"  MCP structures: {len(snapshot.get('processes') or {})} processes, "
+                f"incomplete={snapshot.get('incomplete')}"
+            )
+        else:
+            print("  [mcp] get_workflow_structure 不可用，嵌套流程改走 flowNode/get")
+    else:
+        snapshot = {
+            "source": "mcp_get_workflow_structure",
+            "tool": None,
+            "argument": None,
+            "incomplete": bool(roots),
+            "gaps": [{"reason": "structure_tool_unavailable"}] if roots else [],
+            "processes": {},
+        }
+
+    targets = mcp_workflow_structure.legacy_targets(snapshot, roots) if base_url else []
+    if targets:
+        print("--- Phase 3b: legacy flowNode/get（审批块与子流程） ---")
+        legacy = mcp_workflow_structure.extract_legacy_structures(
+            targets, lambda pid: _fetch_legacy_flow(base_url, pid),
+        )
+        snapshot = mcp_workflow_structure.merge_legacy(snapshot, legacy, roots)
+        print(
+            f"  legacy processes: {len(legacy.get('processes') or {})}, "
+            f"incomplete={snapshot.get('incomplete')}"
+        )
+
+    if snapshot.get("processes") or snapshot.get("gaps"):
+        mcp_workflow_structure.persist(project_dir, snapshot)
+        node_data = mcp_workflow_structure.node_data_from_snapshot(snapshot, wf_list)
+        for pid, structure in (snapshot.get("processes") or {}).items():
+            flow_map = structure.get("flowNodeMap")
+            if not isinstance(flow_map, dict) or not flow_map or pid not in node_data:
+                continue
+            summary = summarize_flow_nodes(flow_map)
+            node_data[pid].update({
+                "node_count": summary["node_count"],
+                "reads": sorted(summary["reads"]),
+                "writes": sorted(summary["writes"]),
+                "crud_field_mappings": summary["crud_field_mappings"],
+                "query_empty_actions": summary["query_empty_actions"],
+                "approval_count": summary["approval_count"],
+                "trigger_sheet": summary.get("trigger_sheet") or node_data[pid].get("worksheet") or "",
+            })
+
+    empty_config = [
+        gap for gap in snapshot.get("gaps") or []
+        if gap.get("reason") == "empty_config" and gap.get("process_id")
+    ]
+    if empty_config and base_url:
+        print("--- Phase 3c: Chrome getNodeDetail（仅补空 config） ---")
+        extract_node_detail_configs(
+            base_url, node_data, project_dir, merge_existing=bool(snapshot.get("processes")),
+        )
+    elif not node_data and not nodes_file:
+        print("  [skip] 无 MCP 结构，也没有可用的 Base URL / 节点文件")
+    return node_data
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1339,6 +1474,7 @@ def main():
     skip_mcp = False
     base_url_override = None
     nodes_file = None
+    process_id_arg = ""
     for i, arg in enumerate(sys.argv):
         if arg == "--mcp-url" and i + 1 < len(sys.argv):
             explicit_mcp_url = sys.argv[i + 1]
@@ -1352,6 +1488,8 @@ def main():
             base_url_override = sys.argv[i + 1]
         if arg == "--nodes-file" and i + 1 < len(sys.argv):
             nodes_file = sys.argv[i + 1]
+        if arg == "--process-id" and i + 1 < len(sys.argv):
+            process_id_arg = sys.argv[i + 1].strip()
     mcp_url = resolve_mcp_url(explicit_mcp_url)
     if not skip_mcp and not mcp_url:
         print(
@@ -1444,21 +1582,37 @@ def main():
         else:
             print("  Playwright also returned 0 workflows — app may have no workflows yet")
 
-    # Phase 3: Workflow nodes (use --nodes-file if available, else API)
-    print("--- Phase 3: 工作流节点 ---")
-    if nodes_file:
-        node_data = extract_workflow_nodes_from_file(nodes_file, wf_list)
-    elif wf_list and base_url:
-        node_data = extract_workflow_nodes(base_url, wf_list, project_dir)
-    else:
-        node_data = {}
-        print("  [skip] 无节点文件，或缺少可用工作流/Base URL")
+    # A /workflowedit/<processId> URL selects that process when --process-id is absent.
+    if not process_id_arg and base_url_override:
+        try:
+            parsed_platform = platform_router.parse_platform_url(base_url_override)
+        except platform_router.PlatformError:
+            parsed_platform = {}
+        if parsed_platform.get("kind") == "workflow" and parsed_platform.get("pid"):
+            process_id_arg = parsed_platform["pid"]
 
-    # Phase 3b: Deep node configs (fieldValues for create/update nodes)
-    if node_data and not nodes_file:
-        node_configs = extract_node_detail_configs(base_url, node_data, project_dir)
-    else:
-        node_configs = {}
+    if process_id_arg and not any(
+        (wf.get("id") or wf.get("processId")) == process_id_arg for wf in wf_list if isinstance(wf, dict)
+    ):
+        wf_list.append({
+            "id": process_id_arg,
+            "processId": process_id_arg,
+            "name": process_id_arg,
+            "trigger": "",
+            "worksheet": "",
+        })
+
+    # Phase 3: MCP structure first; Chrome getNodeDetail only for gaps.
+    print("--- Phase 3: 工作流节点 ---")
+    node_data = collect_workflow_nodes(
+        project_dir,
+        wf_list,
+        mcp_url=mcp_url,
+        base_url=base_url,
+        nodes_file=nodes_file,
+        process_id=process_id_arg,
+        skip_mcp=skip_mcp,
+    )
 
     # Build outputs
     print("--- 生成输出文件 ---")
@@ -1546,7 +1700,7 @@ def main():
         total_w = sum(len(wf["w"]) for wfs in manifest.get("tables", {}).values() for wf in wfs)
         print(f"读关系: {total_r}  写关系: {total_w}")
     else:
-        print("节点级数据: 不可用 (需要 Chrome 登录)")
+        print("节点级数据: 不可用 (MCP 未提供 get_workflow_structure，且没有 Chrome 节点接口)")
     print()
     print("下一步:")
     print(f"  1. 编辑 aliases.json 填充客户术语映射")

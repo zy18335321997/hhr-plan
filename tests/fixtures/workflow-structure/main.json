@@ -1,0 +1,45 @@
+{
+  "success": true,
+  "data": {
+    "processId": "proc-root",
+    "name": "采购审批示例",
+    "description": "fixture",
+    "published": true,
+    "trigger": {
+      "nodeAlias": "trigger",
+      "nodeId": "node-trigger",
+      "triggerType": "worksheet_event",
+      "name": "工作表事件",
+      "config": {"worksheetId": "ws-example"}
+    },
+    "nodes": [
+      {
+        "nodeAlias": "approve",
+        "nodeId": "node-approve",
+        "nodeType": "approval_block",
+        "name": "审批",
+        "prevNode": {"nodeAlias": "trigger"},
+        "parentNode": {},
+        "config": {"process": {"processId": "proc-approval-inner"}}
+      },
+      {
+        "nodeAlias": "child",
+        "nodeId": "node-child",
+        "nodeType": "sub_process",
+        "name": "子流程",
+        "prevNode": {"nodeAlias": "approve"},
+        "parentNode": {},
+        "config": {"process": {"processId": "proc-sub-inner"}}
+      },
+      {
+        "nodeAlias": "update",
+        "nodeId": "node-update",
+        "nodeType": "update_record",
+        "name": "更新记录",
+        "prevNode": {"nodeAlias": "child"},
+        "parentNode": {},
+        "config": {}
+      }
+    ]
+  }
+}

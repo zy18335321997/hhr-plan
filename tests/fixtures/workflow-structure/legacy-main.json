@@ -1,0 +1,57 @@
+{
+  "data": {
+    "id": "proc-main",
+    "startEventId": "n-start",
+    "flowNodeMap": {
+      "n-start": {
+        "id": "n-start",
+        "typeId": 0,
+        "name": "开始",
+        "appName": "采购单"
+      },
+      "n-approve": {
+        "id": "n-approve",
+        "typeId": 26,
+        "name": "审批",
+        "appId": "ws-not-a-process",
+        "processNode": {
+          "id": "proc-approval",
+          "startEventId": "a-start",
+          "flowNodeMap": {
+            "a-start": {
+              "id": "a-start",
+              "typeId": 0,
+              "name": "审批开始"
+            },
+            "a-sub": {
+              "id": "a-sub",
+              "typeId": 16,
+              "name": "子流程",
+              "subProcessId": "proc-sub",
+              "appId": "ws-sheet"
+            },
+            "a-deeper": {
+              "id": "a-deeper",
+              "typeId": 26,
+              "name": "二级审批",
+              "processNode": {
+                "id": "proc-approval-2",
+                "startEventId": "b-start",
+                "flowNodeMap": {
+                  "b-start": {"id": "b-start", "typeId": 0, "name": "二级开始"},
+                  "b-update": {
+                    "id": "b-update",
+                    "typeId": 6,
+                    "name": "更新记录",
+                    "sourceEntityName": "订单",
+                    "fields": [{"fieldId": "f9", "fieldValue": "done"}]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

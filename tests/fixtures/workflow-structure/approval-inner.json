@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "data": {
+    "processId": "proc-approval-inner",
+    "name": "审批内部示例",
+    "description": "",
+    "published": false,
+    "trigger": {
+      "nodeAlias": "trigger",
+      "nodeId": "inner-trigger",
+      "triggerType": "approval",
+      "name": "审批开始",
+      "config": {"owner": "starter"}
+    },
+    "nodes": [
+      {
+        "nodeAlias": "pass",
+        "nodeId": "inner-pass",
+        "nodeType": "update_record",
+        "name": "通过后更新",
+        "prevNode": {"nodeAlias": "trigger"},
+        "parentNode": {},
+        "config": {"fields": [{"fieldId": "f1", "value": "ok"}]}
+      }
+    ]
+  }
+}
