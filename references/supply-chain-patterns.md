@@ -1,15 +1,15 @@
 # 供应链制造 APaaS 设计模式
 
-> 来源：尚策项目反向蒸馏 — 136表 / 490工作流 / 8业务模块
+> 来源：example-beta项目反向蒸馏 — 136表 / 490工作流 / 8业务模块
 > 适用范围：供应链协同、MRP物料需求、委外加工、采购-生产-仓储联动
 
 ---
 
 ## 一、核心特征：状态流转型
 
-与莱尔德（数据加工型）不同，尚策是**状态流转型**系统：
+与example-manufacturing（数据加工型）不同，example-beta是**状态流转型**系统：
 
-| 特征 | 尚策 | 莱尔德 |
+| 特征 | example-beta | example-manufacturing |
 |------|------|--------|
 | 创建 vs 更新 | create=132, update=690 | create=706, update=194 |
 | 设计哲学 | 大量更新已有记录的状态/库存/进度 | 大量创建新记录并做数据运算 |
@@ -20,15 +20,15 @@
 
 ## 二、标准业务域模板
 
-尚策比莱尔德多了两个域：**委外(外协加工)** 和 **问题反馈渠道**。
+example-beta比example-manufacturing多了两个域：**委外(外协加工)** 和 **问题反馈渠道**。
 
-### 莱尔德六域 + 尚策扩展
+### example-manufacturing六域 + example-beta扩展
 
 ```
-# 莱尔德已有六域（同前）
+# example-manufacturing已有六域（同前）
 销售域 / 采购域 / 生产域 / 仓储域 / 技术域 / 设备域
 
-# 尚策新增域
+# example-beta新增域
 委外域: 委外订单 → 委外发料 → 委外收货 → 委外质检 → 委外结算
 人事域: 员工档案 → 考勤 → 请假 → 薪资
 问题反馈: 问题上报 → 问题分类 → 处理派单 → 整改验收
@@ -62,7 +62,7 @@
 
 ---
 
-## 四、尚策的教训（反面参考）
+## 四、example-beta的教训（反面参考）
 
 ### 命名债务
 - **49条工作流含"未命名"**（10%），包括"未命名子流程"33条、"未命名审批"10条
@@ -89,14 +89,14 @@
 
 ---
 
-## 六、与莱尔德模式的互补
+## 六、与example-manufacturing模式的互补
 
 | 场景 | 优先参考 |
 |------|---------|
-| 标准制造六域 | 莱尔德 manufacturing-patterns.md |
-| MRP物料需求计划 | 尚策 supply-chain-patterns.md |
-| 委外/外协加工 | 尚策 supply-chain-patterns.md |
-| 询价-比价-定价 | 尚策 supply-chain-patterns.md |
-| 审批密集型流程 | 尚策 supply-chain-patterns.md |
-| 运算密集型流程 | 莱尔德 manufacturing-patterns.md |
-| 如何避免命名债务 | 尚策 supply-chain-patterns.md（反面教训） |
+| 标准制造六域 | example-manufacturing manufacturing-patterns.md |
+| MRP物料需求计划 | example-beta supply-chain-patterns.md |
+| 委外/外协加工 | example-beta supply-chain-patterns.md |
+| 询价-比价-定价 | example-beta supply-chain-patterns.md |
+| 审批密集型流程 | example-beta supply-chain-patterns.md |
+| 运算密集型流程 | example-manufacturing manufacturing-patterns.md |
+| 如何避免命名债务 | example-beta supply-chain-patterns.md（反面教训） |

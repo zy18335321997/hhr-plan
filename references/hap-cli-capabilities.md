@@ -6,7 +6,7 @@
 
 ```bash
 pip install hap-cli           # 或 pipx install hap-cli
-hap auth login https://work.jijiansmart.com   # 私有部署
+hap auth login https://work.example.com   # 私有部署
 hap auth login mingdao         # SaaS
 hap app select APP_ID          # 设置默认应用
 ```

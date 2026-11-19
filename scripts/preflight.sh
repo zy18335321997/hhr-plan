@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-suffixes = {".json", ".md", ".py", ".sh", ".yaml", ".yml"}
+suffixes = {".js", ".json", ".md", ".py", ".sh", ".tsv", ".yaml", ".yml"}
 excluded_paths = {
     "scripts/preflight.sh",
 }

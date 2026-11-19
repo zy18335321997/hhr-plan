@@ -219,11 +219,11 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 
 ```bash
 # 涉事表的入向/出向依赖
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --writes-to -p 几建
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --reads-from -p 几建
+python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --writes-to -p example-alpha
+python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --reads-from -p example-alpha
 
 # 涉事实体的生命周期
-python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py 几建 --lifecycle 表名
+python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py example-alpha --lifecycle 表名
 ```
 
 列出受影响的其他工作流（截断到 10 条）。标注每条依赖的类型（读/写/子流程/审批链）。

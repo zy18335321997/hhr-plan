@@ -4,7 +4,7 @@
 用法:
   python3 verify-platform.py --nodes nodes.json
   python3 verify-platform.py --lock-file execution_lock.json
-  python3 verify-platform.py --nodes nodes.json --project 几建
+  python3 verify-platform.py --nodes nodes.json --project example-alpha
 
 输出: JSON (与 Agent 2 输出格式兼容)
 exit code: 0 = pass, 1 = fail (有机械检查未通过)
@@ -51,6 +51,8 @@ TYPE_NAMES = {
     25: "调用已集成API", 26: "发起审批流程(新版)", 27: "发送站内通知",
     28: "获取页面快照", 29: "循环", 30: "返回", 31: "AI生成内容",
     32: "自定义节点/插件", 33: "AI Agent", 34: "知识库检索",
+    100: "平台保留节点", 101: "平台保留节点",
+    1000: "平台保留节点", 1001: "平台保留节点",
 }
 
 # ── 批量上限 ──

@@ -4,35 +4,35 @@ Query the FTS5 search index for hhr-plan project data.
 
 Usage:
     # Fuzzy search workflows by name
-    python3 scripts/search.py "采购需求" --type workflow --project 几建
+    python3 scripts/search.py "采购需求" --type workflow --project example-alpha
 
     # Reverse lookup: which workflows write to a sheet?
-    python3 scripts/search.py "采购需求" --writes-to --project 几建
+    python3 scripts/search.py "采购需求" --writes-to --project example-alpha
 
     # Reverse lookup: which workflows read from a sheet?
-    python3 scripts/search.py "任务清单" --reads-from --project 几建
+    python3 scripts/search.py "任务清单" --reads-from --project example-alpha
 
     # Find sheets containing a field
-    python3 scripts/search.py "合同编号" --field-search --project 几建
+    python3 scripts/search.py "合同编号" --field-search --project example-alpha
 
     # Search across all projects
     python3 scripts/search.py "采购" --type workflow --all-projects
 
     # JSON output for programmatic consumption
-    python3 scripts/search.py "采购需求" --type workflow --project 几建 --format json
+    python3 scripts/search.py "采购需求" --type workflow --project example-alpha --format json
 
     # Show all sheets in a project
-    python3 scripts/search.py --list-sheets --project 几建
+    python3 scripts/search.py --list-sheets --project example-alpha
 
     # Exact workflow name lookup (bypasses FTS, fast path)
-    python3 scripts/search.py "生成询价表" --exact-name --project 几建
+    python3 scripts/search.py "生成询价表" --exact-name --project example-alpha
 
     # Direct PID lookup
-    python3 scripts/search.py 69af8e0bdd5e32da42401a8a --pid --project 几建
+    python3 scripts/search.py 0000000000000000000000aa --pid --project example-alpha
 
     # Deep search: FTS hits + node_chain + entity lifecycle in one call
-    python3 scripts/search.py "付款计划" --deep --project 几建
-    python3 scripts/search.py "付款计划" --deep -p 几建 -f json  # JSON output for agents
+    python3 scripts/search.py "付款计划" --deep --project example-alpha
+    python3 scripts/search.py "付款计划" --deep -p example-alpha -f json  # JSON output for agents
 """
 
 import json

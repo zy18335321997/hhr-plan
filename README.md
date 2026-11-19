@@ -25,12 +25,20 @@
 ## 安装与健康检查
 
 ```bash
-git clone https://github.com/YOUR_USER/hhr-plan.git \
+git clone https://github.com/zy18335321997/hhr-plan.git \
   ~/.claude/skills/hhr-plan
 bash ~/.claude/skills/hhr-plan/scripts/doctor.sh
 ```
 
-Python 脚本以 Python 3.10+ 为目标。实时平台查询可选依赖 hap-bridge；浏览器提取可选依赖 Playwright 和 `browser_cookie3`。
+Python 脚本以 Python 3.10+ 为目标。实时平台查询可选依赖 hap-bridge。浏览器提取的可选依赖钉在 `pyproject.toml` 的 `live` extra（`browser_cookie3`、Playwright）：
+
+```bash
+pip install '.[live]'
+```
+
+Chrome / AppleScript 实时提取只在 macOS 上可用。节点类型以 `scripts/verify-platform.py` 的 `TYPE_NAMES` 为准；此映射修正后，已经落在 `~/Documents/workflow-output/` 的清单必须重新提取，旧 manifest 不能继续当字段级证据。
+
+公开历史里曾经包含一条默认 HAP AppKey/Sign。当前树已删除该默认值，但旧提交里的凭证在你吊销并（可选）自行重写历史之前仍然可以恢复。本仓库不会代为轮换或改写历史。
 
 ## 安全提取项目
 

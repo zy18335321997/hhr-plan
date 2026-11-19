@@ -4,7 +4,7 @@ Build FTS5 search index for hhr-plan project data.
 
 Usage:
     python3 scripts/build_search_index.py --all
-    python3 scripts/build_search_index.py 几建
+    python3 scripts/build_search_index.py example-alpha
 
 Input:  project_context.json + business-flow-manifest.json + _node_data.json + aliases.json
 Output: ~/Documents/workflow-output/_search_index.db

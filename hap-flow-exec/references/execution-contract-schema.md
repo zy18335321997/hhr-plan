@@ -11,7 +11,7 @@
   "meta": {
     "schema_version": "1.0",
     "source_design": "path/to/设计方案-v2.md",
-    "project": "同技智能",
+    "project": "example-org",
     "created": "2026-07-05",
     "workflow_name": "图书归还",
     "node_count": 10

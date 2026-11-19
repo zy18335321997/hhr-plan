@@ -3,20 +3,20 @@
 
 Usage:
     # 仅检查 Gate 4（字段/表名存在性）
-    python3 design_validator.py 几建 --check-fields "采购需求,采购审批意见表"
-    python3 design_validator.py 几建 --check-fields "采购需求:审批状态,审批意见"
+    python3 design_validator.py example-alpha --check-fields "采购需求,采购审批意见表"
+    python3 design_validator.py example-alpha --check-fields "采购需求:审批状态,审批意见"
 
     # 仅检查 Gate 1（双向依赖 / DAG 环路）
-    python3 design_validator.py 几建 --check-graph
+    python3 design_validator.py example-alpha --check-graph
 
     # 检查新增关联是否产生环路（指定新关联方向）
-    python3 design_validator.py 几建 --new-edge "新表A→Hub表B"
+    python3 design_validator.py example-alpha --new-edge "新表A→Hub表B"
 
     # 全部检查
-    python3 design_validator.py 几建 --check-all
+    python3 design_validator.py example-alpha --check-all
 
     # 从方案 Markdown 文件解析引用并检查
-    python3 design_validator.py 几建 --plan-file path/to/plan.md
+    python3 design_validator.py example-alpha --plan-file path/to/plan.md
 
 Output: JSON (always) + human summary (stderr)
 """
@@ -403,7 +403,7 @@ def check_dag_cycles(
 
 def main():
     parser = argparse.ArgumentParser(description="hhr-plan 自动化设计验证器")
-    parser.add_argument("project", help="项目名（如 '几建'）")
+    parser.add_argument("project", help="项目名（如 'example-alpha'）")
     parser.add_argument("--check-fields", action="append", help="检查字段存在性: '表名:字段1,字段2' 或 '表名'（可多次使用）")
     parser.add_argument("--check-graph", action="store_true", help="检查已有依赖图的双向边和环路")
     parser.add_argument("--new-edge", action="append", help="检查新增关联: '源表→目标表'（可多次使用）")

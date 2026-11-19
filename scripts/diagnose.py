@@ -409,7 +409,7 @@ def save_issue(project_name, query, result):
 def main():
     if len(sys.argv) < 3:
         print("Usage: python3 diagnose.py <project_name> \"<客户问题>\"")
-        print("Example: python3 diagnose.py 几建 \"入库单明细为什么没数据\"")
+        print("Example: python3 diagnose.py example-alpha \"入库单明细为什么没数据\"")
         sys.exit(1)
 
     project_name = sys.argv[1]

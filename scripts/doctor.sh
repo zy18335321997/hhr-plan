@@ -72,11 +72,13 @@ phase "Layer 0: 基础设施"
 # 0.1 python3
 if command -v python3 >/dev/null 2>&1; then
     pyver="$(python3 -c 'import sys; print(".".join(map(str,sys.version_info[:2])))' 2>/dev/null || echo 'unknown')"
-    pymajor="$(echo "$pyver" | cut -d. -f1)"
-    if [[ "$pymajor" -ge 3 ]]; then
+    pymajor="${pyver%%.*}"
+    pyminor="${pyver#*.}"
+    pyminor="${pyminor%%.*}"
+    if [[ "$pymajor" =~ ^[0-9]+$ && "$pyminor" =~ ^[0-9]+$ ]] && { [[ "$pymajor" -gt 3 ]] || [[ "$pymajor" -eq 3 && "$pyminor" -ge 10 ]]; }; then
         ok "python3 $pyver"
     else
-        err "python3 版本过低: $pyver (需要 >= 3.10)"
+        err "python3 版本过低或无法识别: $pyver (需要 >= 3.10)"
     fi
 else
     err "python3 未安装"
@@ -87,7 +89,7 @@ if command -v python3 >/dev/null 2>&1; then
     if python3 -c "import browser_cookie3" 2>/dev/null; then
         ok "browser_cookie3 (pip)"
     else
-        warn "browser_cookie3 未安装 — auth.py / extract-project.py 需要 (fix: pip3 install browser_cookie3)"
+        warn "browser_cookie3 未安装 — auth.py / extract-project.py 需要 (fix: pip install '.[live]')"
     fi
 fi
 
@@ -113,11 +115,13 @@ else
     warn "git 未安装 — rebuild_graph.py 的 diff 功能需要"
 fi
 
-# 0.6 Chrome (for extract-via-browser)
-if [[ -d "/Applications/Google Chrome.app" ]]; then
-    ok "Chrome (extract-via-browser)"
+# 0.6 Chrome / AppleScript live extraction is macOS-only.
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    warn "Chrome/AppleScript 实时提取仅支持 macOS — 当前系统 $(uname -s) 不可用"
+elif [[ -d "/Applications/Google Chrome.app" ]]; then
+    ok "Chrome (extract-via-browser, macOS)"
 else
-    warn "Chrome 未安装 — extract-via-browser.py 不可用"
+    warn "Chrome 未安装 — extract-via-browser.py 仅支持 macOS + Chrome"
 fi
 
 # ─────────────────────────────────────────────

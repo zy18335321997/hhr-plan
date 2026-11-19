@@ -1,7 +1,7 @@
 # Pattern D: 纯信号（Pure Signal）
 
 > 不读不写，只做通知、提醒或状态推送。
-> 数据流签名: 0 read → 0 write | 几建占比: 23.0%
+> 数据流签名: 0 read → 0 write | example-alpha占比: 23.0%
 
 ---
 

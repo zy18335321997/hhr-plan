@@ -79,7 +79,7 @@ python3 $SKILL/wf_fetch.py <项目名> <PID或工作流名> [--url <平台URL>]
   ② 平台路由内部 API（<项目>/platform.json 绑定或 --url 指定平台，
      且输入为 24 位 hex PID）→ 直接调该平台 /api/workflow/flowNode/get
      → 自动写缓存 + 写绑定（source=platform_internal）
-  ③ 无平台绑定时 → cli.py wf-nodes（legacy，内部 BASE 写死 work.jijiansmart.com）
+  ③ 无平台绑定时 → cli.py wf-nodes（legacy，内部 BASE 写死 work.example.com）
   ④ 前两者不可用 → MCP get_workflow_details 兜底（名称+入参，无节点）
   ⑤ --force-remote → 跳过本地缓存，强制从远程拉取并更新缓存
 ```
