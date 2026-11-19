@@ -1,7 +1,7 @@
 # Pattern A: 数据聚合查询（Data Interrogation）
 
 > 从多个上下文表聚合信息后，再做操作或判断。查询密集型。
-> 节点签名: Query→Query→Query(→操作) | 几建占比: ~15% (complex workflows)
+> 节点签名: Query→Query→Query(→操作) | example-alpha占比: ~15% (complex workflows)
 
 ---
 

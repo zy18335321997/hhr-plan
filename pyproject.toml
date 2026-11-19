@@ -1,0 +1,13 @@
+[project]
+name = "hhr-plan"
+version = "2.1.0"
+description = "Mingdao Cloud APaaS design, diagnosis, and audit skill"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+
+[project.optional-dependencies]
+live = [
+  "browser-cookie3==0.20.1",
+  "playwright==1.49.1",
+]

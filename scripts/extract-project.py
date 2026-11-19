@@ -37,6 +37,134 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import platform_router
 
+# Node roles come from scripts/verify-platform.py TYPE_NAMES.
+# 6 is the data operation, 7 is query, 13 is get-multiple, 4 and 26 are approvals.
+# 2 and 3 are a branch arm and a fill step, not create/update.
+DATA_OPERATION_TYPE = 6
+READ_NODE_TYPES = {7, 13}
+APPROVAL_NODE_TYPES = {4, 26}
+DETAIL_NODE_TYPES = {DATA_OPERATION_TYPE}
+CREATE_ACTION_IDS = {1, 21}
+UPDATE_ACTION_IDS = {2, 412}
+_READ_NAME_KEYWORDS = ("获取", "查询")
+_WRITE_NAME_KEYWORDS = ("新增", "更新", "删除")
+_IGNORED_TARGETS = {"按钮触发", "获取关联记录", "工作表事件触发"}
+
+
+def _load_type_names() -> dict:
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-platform.py")
+    spec = importlib.util.spec_from_file_location("verify_platform_types", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.TYPE_NAMES
+
+
+TYPE_NAMES = _load_type_names()
+
+
+def iter_flow_nodes(flow_node_map):
+    """Yield real nodes. Metadata keys saved beside the map start with '_'."""
+    if not isinstance(flow_node_map, dict):
+        return
+    for node_id, node in flow_node_map.items():
+        if isinstance(node_id, str) and node_id.startswith("_"):
+            continue
+        if isinstance(node, dict):
+            yield node_id, node
+
+
+def _action_id(node) -> int | None:
+    try:
+        return int(node.get("actionId"))
+    except (TypeError, ValueError):
+        return None
+
+
+def is_field_detail_node(node: dict) -> bool:
+    """Field-level create/update lives on type 6, not on branch/fill nodes."""
+    if node.get("typeId") not in DETAIL_NODE_TYPES:
+        return False
+    name = node.get("name") or ""
+    aid = _action_id(node)
+    if aid in CREATE_ACTION_IDS or aid in UPDATE_ACTION_IDS:
+        return True
+    return any(keyword in name for keyword in ("新增", "更新"))
+
+
+def detail_type_label(node: dict) -> str:
+    name = node.get("name") or ""
+    aid = _action_id(node)
+    if aid in CREATE_ACTION_IDS or "新增" in name:
+        return "新增记录"
+    return "更新记录"
+
+
+def summarize_flow_nodes(flow_node_map) -> dict:
+    """Classify one workflow using the verified type-id map."""
+    reads, writes = set(), set()
+    crud_mappings = []
+    query_empty_actions = []
+    approval_count = 0
+    trigger_sheet = ""
+    node_count = 0
+    incomplete = False
+    for _node_id, node in iter_flow_nodes(flow_node_map):
+        node_count += 1
+        tid = node.get("typeId", -1)
+        name = node.get("name") or ""
+        app_name = node.get("appName") or ""
+        src_entity = node.get("sourceEntityName") or ""
+        if tid == DATA_OPERATION_TYPE:
+            target = src_entity or app_name
+            if target and target not in _IGNORED_TARGETS:
+                if any(keyword in name for keyword in _READ_NAME_KEYWORDS):
+                    reads.add(target)
+                elif any(keyword in name for keyword in _WRITE_NAME_KEYWORDS):
+                    writes.add(target)
+                fields = node.get("fields") or []
+                if isinstance(fields, list):
+                    field_names = []
+                    for field in fields:
+                        if not isinstance(field, dict):
+                            continue
+                        field_name = field.get("fieldName") or field.get("fieldId") or ""
+                        field_value = field.get("fieldValue", "")
+                        if field_name or field_value:
+                            field_names.append(f"{field_name or '?'}:{str(field_value)[:50]}")
+                    if field_names:
+                        crud_mappings.append((name, target, field_names))
+            continue
+        if tid in READ_NODE_TYPES:
+            target = app_name or src_entity
+            if target:
+                reads.add(target)
+                query_empty_actions.append((
+                    name,
+                    target,
+                    node.get("executeType", -1),
+                    node.get("isException", False),
+                ))
+            continue
+        if tid == 0 and app_name and not trigger_sheet:
+            trigger_sheet = app_name
+            continue
+        if tid in APPROVAL_NODE_TYPES:
+            approval_count += 1
+    if node_count >= 200:
+        incomplete = True
+    return {
+        "reads": reads,
+        "writes": writes,
+        "crud_field_mappings": crud_mappings,
+        "query_empty_actions": query_empty_actions,
+        "approval_count": approval_count,
+        "trigger_sheet": trigger_sheet,
+        "node_count": node_count,
+        "incomplete": incomplete,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -557,18 +685,7 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
     
     total = len(wf_list)
     errors = 0
-    
-    READ_KEYWORDS = ("获取", "查询")
-    WRITE_KEYWORDS = ("新增", "更新", "删除")
-    
-    def _is_read(name, tid):
-        if tid == 13: return True
-        if tid == 7: return True
-        return any(kw in name for kw in READ_KEYWORDS)
-    
-    def _is_write(name, tid):
-        return any(kw in name for kw in WRITE_KEYWORDS)
-    
+
     TRIGGER_MAP = {
         0: "工作表事件", 1: "自定义动作(按钮)", 2: "定时触发",
         3: "Webhook", 4: "人员事件", 5: "审批流程", 6: "子流程",
@@ -596,53 +713,11 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
                     flow_node_map = v
                     break
         
-        reads, writes = set(), set()
-        crud_mappings = []
-        query_empty_actions = []
-        approval_count = 0
-        
         if flow_node_map:
-            for node_id, node in flow_node_map.items():
-                if not isinstance(node, dict):
-                    continue
-                tid = node.get("typeId", -1)
-                name = node.get("name", "")
-                
-                if tid == 6:
-                    target = node.get("sourceEntityName", "") or node.get("selectNodeName", "")
-                    if target:
-                        writes.add(target)
-                        fields = node.get("fields", [])
-                        if isinstance(fields, list):
-                            field_names = []
-                            for f in fields:
-                                fn = f.get("fieldName", "") or f.get("fieldId", "")
-                                fv = f.get("fieldValue", "")
-                                if fn or fv:
-                                    field_names.append(f"{fn or '?'}:{str(fv)[:50]}")
-                            if field_names:
-                                crud_mappings.append((name, target, field_names))
-                    continue
-                
-                if tid in (7, 13):
-                    target = node.get("appName", "")
-                    if target:
-                        reads.add(target)
-                        et = node.get("executeType", -1)
-                        is_exception = node.get("isException", False)
-                        query_empty_actions.append((name, target, et, is_exception))
-                    continue
-                
-                app_name = node.get("appName", "")
-                if _is_write(name, tid) and app_name:
-                    writes.add(app_name)
-                elif _is_read(name, tid) and app_name:
-                    reads.add(app_name)
-                
-                if tid in (10, 11):
-                    approval_count += 1
+            summary = summarize_flow_nodes(flow_node_map)
         else:
             errors += 1
+            summary = summarize_flow_nodes({})
         
         # Prefer metadata from nodes.json (_name, _sheet, _trigger)
         wf_name = flow_node_map.get("_name", "") if flow_node_map else ""
@@ -662,12 +737,13 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
             "worksheet": wf_worksheet,
             "trigger": trig_label,
             "trigger_type_id": trig_id,
-            "node_count": len(flow_node_map) if flow_node_map else 0,
-            "reads": sorted(reads),
-            "writes": sorted(writes),
-            "crud_field_mappings": crud_mappings,
-            "query_empty_actions": query_empty_actions,
-            "approval_count": approval_count,
+            "node_count": summary["node_count"],
+            "reads": sorted(summary["reads"]),
+            "writes": sorted(summary["writes"]),
+            "crud_field_mappings": summary["crud_field_mappings"],
+            "query_empty_actions": summary["query_empty_actions"],
+            "approval_count": summary["approval_count"],
+            "incomplete": summary["incomplete"],
         }
         
         if (i + 1) % 100 == 0:
@@ -697,24 +773,16 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
     if not domain:
         print("  [skip] Cannot derive cookie domain from base_url")
         return {}
-    headers = auth.get_auth_headers(domain)
+    try:
+        headers = auth.get_auth_headers(domain)
+    except auth.CookieScopeError as e:
+        print(f"  [skip] {e}")
+        return {}
     if not headers:
         print(f"  [skip] No auth for domain: {domain} — log into 明道云 in Chrome first")
         return {}
 
-    # Node typeId classification
-    READ_KEYWORDS = ("获取", "查询")
-    WRITE_KEYWORDS = ("新增", "更新", "删除")
-
-    def _is_read(name, tid):
-        if tid == 13: return True
-        if tid == 7: return True
-        return any(kw in name for kw in READ_KEYWORDS)
-
-    def _is_write(name, tid):
-        return any(kw in name for kw in WRITE_KEYWORDS)
-
-    # Trigger type mapping (明道云 triggerType values)
+    # Trigger type mapping (明道云 triggerType values). This is not the node type_id map.
     TRIGGER_MAP = {
         0: "工作表事件",
         1: "自定义动作(按钮)",
@@ -752,10 +820,15 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
             continue
 
         try:
-            url = f"{base_url}/api/workflow/flowNode/get?processId={pid}&count=200"
-            req = urllib.request.Request(url, headers=headers, method="GET")
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                resp_data = json.loads(resp.read().decode())
+            query = urllib.parse.urlencode({
+                "processId": pid,
+                "count": platform_router.NODE_FETCH_LIMIT,
+            })
+            resp_data = platform_router.fetch_json(
+                base_url,
+                f"/api/workflow/flowNode/get?{query}",
+                domain=domain,
+            )
 
             flow_node_map = resp_data.get("data", {}).get("flowNodeMap", {})
 
@@ -766,74 +839,12 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
             raw_entry["_trigger"] = wf.get("trigger", "")
             raw_nodes[pid] = raw_entry
 
-            reads, writes = set(), set()
-            crud_mappings = []   # (node_name, target_table, field_names_written)
-            query_empty_actions = []  # (node_name, table, executeType, isException)
-            approval_count = 0
-
-            for node_id, node in flow_node_map.items():
-                if not isinstance(node, dict):
-                    continue
-                tid = node.get("typeId", -1)
-                name = node.get("name", "")
-                app_name = node.get("appName", "")
-                src_entity = node.get("sourceEntityName", "")
-
-                # typeId=6: CRUD node — sourceEntityName is the REAL target worksheet
-                if tid == 6:
-                    target = src_entity  # Only trust sourceEntityName, not selectNodeName
-                    if target and target not in ("按钮触发", "获取关联记录", "工作表事件触发"):
-                        if "获取" in name or "查询" in name:
-                            reads.add(target)
-                        else:
-                            writes.add(target)
-                        fields = node.get("fields", [])
-                        if isinstance(fields, list):
-                            field_names = []
-                            for f in fields:
-                                fn = f.get("fieldName", "") or f.get("fieldId", "")
-                                fv = f.get("fieldValue", "")
-                                if fn or fv:
-                                    field_names.append(f"{fn or '?'}:{str(fv)[:50]}")
-                            if field_names:
-                                crud_mappings.append((name, target, field_names))
-                    continue
-
-                # typeId=4: query sheet → READ
-                if tid == 4:
-                    if app_name:
-                        reads.add(app_name)
-                    continue
-
-                # typeId=7: get multiple → READ (appName or sourceEntityName)
-                if tid == 7:
-                    target = app_name or src_entity
-                    if target:
-                        reads.add(target)
-                        et = node.get("executeType", -1)
-                        is_exception = node.get("isException", False)
-                        query_empty_actions.append((name, target, et, is_exception))
-                    continue
-
-                # typeId=13: exception handler — appName for read context
-                if tid == 13:
-                    if app_name:
-                        reads.add(app_name)
-                    continue
-
-                # typeId=0: trigger — appName = the sheet hosting the trigger
-                if tid == 0:
-                    if app_name and not wf.get("worksheet"):
-                        wf["worksheet"] = app_name
-                    continue
-
-                # typeId=2,3: create/update — appName often empty in shallow data
-                # Target sheet comes from Phase 3b (_node_configs.json)
-                # We defer classification to build_manifest which reads _node_configs.json
-
-                # Approval nodes (公理2)
-                if tid in (10, 11, 26, 27, 28):
-                    approval_count += 1
+            summary = summarize_flow_nodes(flow_node_map)
+            if summary["trigger_sheet"] and not wf.get("worksheet"):
+                wf["worksheet"] = summary["trigger_sheet"]
+            stated_total = resp_data.get("data", {}).get("total")
+            if isinstance(stated_total, int) and stated_total > summary["node_count"]:
+                summary["incomplete"] = True
 
             # Map trigger type
             trig_id, trig_label = _map_trigger(wf)
@@ -855,13 +866,13 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
                 "worksheet": wf_worksheet,
                 "trigger": trig_label,
                 "trigger_type_id": trig_id,
-                "node_count": len(flow_node_map),
-                "reads": sorted(reads),
-                "writes": sorted(writes),
-                # New fields for axiom verification
-                "crud_field_mappings": crud_mappings,
-                "query_empty_actions": query_empty_actions,
-                "approval_count": approval_count,
+                "node_count": summary["node_count"],
+                "reads": sorted(summary["reads"]),
+                "writes": sorted(summary["writes"]),
+                "crud_field_mappings": summary["crud_field_mappings"],
+                "query_empty_actions": summary["query_empty_actions"],
+                "approval_count": summary["approval_count"],
+                "incomplete": summary["incomplete"],
             }
 
             if (i + 1) % 50 == 0:
@@ -899,7 +910,7 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     """Phase 3b: For each create/update node, call getNodeDetail to get fieldValues.
 
     Reads nodes.json (saved by extract_workflow_nodes), calls getNodeDetail
-    for typeId=2 (create) and typeId=3 (update) nodes, saves to _node_configs.json.
+    for type_id 6 create/update nodes, and saves _node_configs.json.
 
     Returns {pid: [{nodeId, nodeName, typeId, targetSheet, controls: [...]}]}
     """
@@ -909,7 +920,11 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     if not domain:
         print("  [skip] Node detail extraction: cannot derive cookie domain")
         return {}
-    headers = auth.get_auth_headers(domain)
+    try:
+        headers = auth.get_auth_headers(domain)
+    except auth.CookieScopeError as e:
+        print(f"  [skip] {e}")
+        return {}
     if not headers:
         print("  [skip] Node detail extraction: no auth")
         return {}
@@ -932,9 +947,15 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
         for nkey, node in wf_data.items():
             if nkey.startswith("_") or not isinstance(node, dict):
                 continue
-            tid = node.get("typeId", -1)
-            if tid in (2, 3):  # create or update
-                detail_jobs.append((pid, wf_name, node.get("id", nkey), tid, node.get("name", "")))
+            if is_field_detail_node(node):
+                detail_jobs.append((
+                    pid,
+                    wf_name,
+                    node.get("id", nkey),
+                    node.get("typeId", DATA_OPERATION_TYPE),
+                    node.get("name", ""),
+                    detail_type_label(node),
+                ))
 
     if not detail_jobs:
         print("  No create/update nodes found for detail extraction")
@@ -944,15 +965,18 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     node_configs = {}
     errors = 0
 
-    for i, (pid, wf_name, node_id, type_id, node_name) in enumerate(detail_jobs):
+    for i, (pid, wf_name, node_id, type_id, node_name, type_label) in enumerate(detail_jobs):
         try:
-            detail_url = (
-                f"{base_url}/api/workflow/flowNode/getNodeDetail"
-                f"?processId={pid}&nodeId={node_id}&flowNodeType={type_id}"
+            query = urllib.parse.urlencode({
+                "processId": pid,
+                "nodeId": node_id,
+                "flowNodeType": type_id,
+            })
+            detail = platform_router.fetch_json(
+                base_url,
+                f"/api/workflow/flowNode/getNodeDetail?{query}",
+                domain=domain,
             )
-            req = urllib.request.Request(detail_url, headers=headers, method="GET")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                detail = json.loads(resp.read().decode())
 
             ddata = detail.get("data", detail)
             if not isinstance(ddata, dict):
@@ -980,7 +1004,7 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
                 "node_id": node_id,
                 "node_name": node_name,
                 "type_id": type_id,
-                "type_label": "新增记录" if type_id == 2 else "更新记录",
+                "type_label": type_label,
                 "target_sheet": target_sheet,
                 "conditions": conditions if conditions else [],
                 "controls": [],
@@ -1046,6 +1070,7 @@ def build_manifest(node_data: dict[str, dict], wf_list: list[dict]) -> dict:
             "w": sorted(writes),
             "trigger": info.get("trigger", ""),
             "node_count": info.get("node_count", 0),
+            **({"incomplete": True} if info.get("incomplete") else {}),
         })
 
     read_index = defaultdict(set)
@@ -1480,12 +1505,16 @@ def main():
         f.write(snapshot)
     print("  project-snapshot.md")
 
-    # 4b. 平台绑定: 只记录 origin + app_id，不含任何凭证；失败只 degrade 不中断提取
+    # 4b. 平台绑定只使用 URL 里的 app id。MCP app id 不一致时不写 platform.json。
     if base_url:
         try:
-            binding_app_id = app_id or ""
-            if not binding_app_id and mcp_url and not skip_mcp:
-                binding_app_id = get_app_id_from_mcp(mcp_url) or ""
+            url_app_id = ""
+            if base_url_override:
+                url_app_id = platform_router.parse_platform_url(base_url_override).get("app_id") or ""
+            mcp_app_id = ""
+            if mcp_url and not skip_mcp:
+                mcp_app_id = get_app_id_from_mcp(mcp_url) or ""
+            binding_app_id = platform_router.resolve_binding_app_id(url_app_id, mcp_app_id)
             platform_router.save_binding(
                 project_dir,
                 origin=base_url,
@@ -1495,7 +1524,7 @@ def main():
             )
             print("  platform.json")
         except Exception as e:
-            print(f"  [skip] platform.json 写入失败: {e}")
+            print(f"  [skip] platform.json 未写入: {e}")
 
     # 5. Registry
     update_registry(project_name, len(ws_map), len(wf_list), bool(mcp_url))

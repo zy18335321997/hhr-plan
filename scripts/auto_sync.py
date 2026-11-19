@@ -6,7 +6,7 @@ Only rebuilds what's changed. Idempotent — safe to run anytime.
 Usage:
     python3 scripts/auto_sync.py              # sync all projects
     python3 scripts/auto_sync.py --check-only  # report what's stale, don't rebuild
-    python3 scripts/auto_sync.py 几建          # sync single project
+    python3 scripts/auto_sync.py example-alpha          # sync single project
 
 Called by:
     - extract-project.py (after extraction)
@@ -236,7 +236,7 @@ def main():
 
         print()
         print("[sync] ✓ Derived data synced.")
-        print("[sync] → search_index.db + dependency_graph.json + topology-<project>.md are fresh.")
+        print("[sync] → search_index.db + dependency_graph.json + <project>/topology.md are fresh.")
     else:
         print("[sync] ✓ Everything is up to date. No rebuild needed.")
 

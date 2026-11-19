@@ -1,8 +1,8 @@
 {
   "date": "2026-07-21",
   "environment": {
-    "host": "http://yuehu.yikuaida.cn",
-    "app_id": "c27f2468-49e5-48f4-ad1f-7342cc3637e1",
+    "host": "http://sandbox.example.com",
+    "app_id": "00000000-0000-4000-8000-000000000003",
     "app_name": "CRM",
     "isolation": "dedicated temporary worksheet and workflows"
   },

@@ -1,7 +1,7 @@
 # Pattern B: 条件迭代（Conditional Iteration）
 
 > 基于数据条件分支处理不同逻辑路径。决策树模式。
-> 节点签名: DataOp→Branch→DataOp→Branch | 几建占比: ~12%
+> 节点签名: DataOp→Branch→DataOp→Branch | example-alpha占比: ~12%
 
 ---
 

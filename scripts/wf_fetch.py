@@ -21,9 +21,9 @@ from pathlib import Path
 
 HAP = Path.home() / ".claude" / "mcp-servers" / "hap-bridge" / "cli.py"
 DATA = Path.home() / "Documents" / "workflow-output"
-SKILL = Path.home() / ".claude" / "skills" / "hhr-plan" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parent
 
-sys.path.insert(0, str(SKILL))
+sys.path.insert(0, str(SCRIPT_DIR))
 import platform_router  # noqa: E402
 
 
@@ -128,18 +128,64 @@ def fetch_all_workflow_names(project: str = "") -> dict[str, str]:
     return result
 
 
+def index_workflow_names(pid_to_name: dict) -> tuple[dict, dict]:
+    """Split PID→name into unique name→pid and names that belong to several PIDs.
+
+    Ambiguous names are preserved as a list of PIDs instead of last-write-wins.
+    """
+    groups: dict[str, set] = {}
+    for pid, name in pid_to_name.items():
+        if not pid or not name:
+            continue
+        groups.setdefault(name, set()).add(pid)
+    unique, ambiguous = {}, {}
+    for name, pids in groups.items():
+        ordered = sorted(pids)
+        if len(ordered) == 1:
+            unique[name] = ordered[0]
+        else:
+            ambiguous[name] = ordered
+    return unique, ambiguous
+
+
+def _read_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _update_name_index(project: str, pid: str, name: str):
-    if not name:
+    if not name or not pid:
         return
-    path = DATA / project / "name_index.json"
-    index = {}
-    if path.exists():
-        try:
-            index = json.loads(path.read_text())
-        except Exception:
-            pass
-    index[name] = pid
-    path.write_text(json.dumps(index, ensure_ascii=False, indent=2))
+    base = DATA / project
+    base.mkdir(parents=True, exist_ok=True)
+    index_path = base / "name_index.json"
+    ambiguous_path = base / "ambiguous_names.json"
+    index = _read_json(index_path)
+    ambiguous = _read_json(ambiguous_path)
+    existing = index.get(name)
+    known = set(ambiguous.get(name, []))
+    if isinstance(existing, str) and existing != pid:
+        known.add(existing)
+    if known:
+        known.add(pid)
+        index.pop(name, None)
+        ambiguous[name] = sorted(known)
+    elif name in ambiguous:
+        known = set(ambiguous.get(name, []))
+        known.add(pid)
+        ambiguous[name] = sorted(known)
+    else:
+        index[name] = pid
+    index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2))
+    if ambiguous:
+        ambiguous_path.write_text(json.dumps(ambiguous, ensure_ascii=False, indent=2))
+    elif ambiguous_path.exists():
+        ambiguous_path.write_text("{}\n", encoding="utf-8")
 
 
 def _update_sheet_index(project: str, pid: str, meta: dict):
@@ -234,7 +280,14 @@ def rebuild_names(project: str):
     base = DATA / project
     print("[rebuild-names] fetching all workflow names from MCP/platform...", file=sys.stderr)
     pid_to_name = fetch_all_workflow_names(project)
-    name_to_pid = {v: k for k, v in pid_to_name.items()}
+    name_to_pid, ambiguous = index_workflow_names(pid_to_name)
+    if ambiguous:
+        amb_path = base / "ambiguous_names.json"
+        amb_path.write_text(json.dumps(ambiguous, ensure_ascii=False, indent=2))
+        print(
+            f"[rebuild-names] {len(ambiguous)} ambiguous names left unresolved",
+            file=sys.stderr,
+        )
     print(f"[rebuild-names] got {len(pid_to_name)} workflows from MCP", file=sys.stderr)
 
     count = 0
@@ -318,7 +371,8 @@ def main():
         print(f"[route] {e}", file=sys.stderr)
         sys.exit(2)
 
-    if not force:
+    # --url 是一次显式换平台，不能把上一份 node_configs.json 当成新平台的数据。
+    if not force and not url_arg:
         cached = find_local_cache(project, pid_or_name)
         if cached:
             data = json.loads(cached.read_text())
@@ -340,15 +394,23 @@ def main():
 
     # ② 平台路由内部 API（绑定存在且输入为 24 位 hex PID）
     nodes = None
+    incomplete = False
     can_route = bool(binding) and _is_hex_pid(pid_or_name)
     if can_route:
         try:
-            nodes = platform_router.fetch_workflow_nodes(binding["origin"], pid_or_name)
+            fetched = platform_router.fetch_workflow_nodes(binding["origin"], pid_or_name)
+            nodes = fetched["nodes"]
+            incomplete = bool(fetched.get("incomplete"))
         except platform_router.PlatformError as e:
             print(f"[route] {e}", file=sys.stderr)
     if nodes:
         cp, meta = save_cache(project, pid_or_name, nodes,
                               origin=binding["origin"], fetch_name=False)
+        if incomplete:
+            meta["incomplete"] = True
+            meta["node_limit"] = platform_router.NODE_FETCH_LIMIT
+            meta_path = cp.parent / "workflow_meta.json"
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
         # 路由成功才落盘绑定（失败不写，防错绑）
         platform_router.save_binding(
             DATA / project,
@@ -360,12 +422,12 @@ def main():
         print(json.dumps({
             "source": "platform_internal", "cached_to": str(cp),
             "node_count": len(nodes), "wf_name": meta.get("name", ""),
-            "trigger": trigger, "nodes": nodes
+            "incomplete": incomplete, "trigger": trigger, "nodes": nodes
         }, ensure_ascii=False, indent=2))
         print(f"[platform] {binding['origin']} ({trigger.get('trigger_sheet','?')} ← {len(nodes)} nodes)", file=sys.stderr)
         return
 
-    # ③ legacy hap-bridge CLI（仅无平台绑定时走，几建行为零回归）
+    # ③ legacy hap-bridge CLI（仅无平台绑定时走，example-alpha行为零回归）
     if not binding:
         try:
             r = subprocess.run(["python3", str(HAP), "wf-nodes", "--raw", pid_or_name],

@@ -14,8 +14,8 @@ Also outputs _node_details.json for axiom audits:
 
 Usage:
     python3 scripts/generate_node_data.py --all
-    python3 scripts/generate_node_data.py 尚策
-    python3 scripts/generate_node_data.py --force 尚策   # overwrite existing
+    python3 scripts/generate_node_data.py example-beta
+    python3 scripts/generate_node_data.py --force example-beta   # overwrite existing
 """
 
 import json
@@ -45,36 +45,17 @@ TRIGGER_ID_MAP = {
     "4": "编辑记录触发",
 }
 
-# Internal API typeId → Chinese display name.
-# The internal workflow data API uses a different numbering scheme than the
-# frontend NODE_TYPE enum in pd-openweb.  This map is cross-referenced against
-# the source: src/pages/workflow/WorkflowSettings/enum.js (NODE_TYPE / SUPPORT_HREF).
-NODE_TYPE_NAME = {
-    0:  "开始",
-    1:  "分支",
-    2:  "分支条件",
-    3:  "填写",           # form fill node (workflow form step)
-    4:  "审批",
-    5:  "抄送",
-    6:  None,            # CRUD → resolved by node name below
-    7:  "查询",
-    8:  "发送自定义请求",  # custom webhook/API (different from typeId=13)
-    9:  "延时",
-    13: "发送API请求",    # internal API id=13, frontend WEBHOOK=8
-    14: "代码块",         # JavaScript / Python code block
-    15: "获取链接",       # get record share link
-    16: "子流程",
-    17: "界面推送",
-    18: "获取记录打印文件", # get record print file
-    20: "封装业务流程",
-    26: "发起审批",
-    27: "站内通知",
-    29: "满足条件时循环",   # loop while condition is met
-    30: "中止流程",        # terminate workflow
-    100:"系统",
-    1000:"系统(获取单条)",
-    1001:"系统(获取多条)",
-}
+def _load_type_names():
+    """TYPE_NAMES in verify-platform.py is the only node-type map."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-platform.py")
+    spec = importlib.util.spec_from_file_location("verify_platform_types", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.TYPE_NAMES
+
+
+NODE_TYPE_NAME = _load_type_names()
 
 # Node-level name refinements for typeId=6 (CRUD/ACTION).
 # The internal API uses the node's `name` field for the concrete action.
@@ -96,11 +77,10 @@ def _node_display_name(type_id, type_name, node_name):
     Falls back through: NODE_TYPE_NAME → ACTION_NODE_NAMES → node_name → type_name.
     """
     base = NODE_TYPE_NAME.get(type_id)
-    if base is not None:
-        return base
-    # typeId=6: resolve via node name
     if type_id == 6:
         return ACTION_NODE_NAMES.get(node_name, node_name or "数据操作")
+    if base is not None:
+        return base
     # typeId known but not in map → use the raw type name
     if type_name and type_name not in ("Unknown(100)", ""):
         return type_name
@@ -459,8 +439,8 @@ def _summarize_node(n, orphan=False):
         if n.get("isException"):
             entry["isException"] = True
 
-    # ===== typeId=7: Query / SEARCH nodes =====
-    elif tid == 7:
+    # ===== typeId=7 query / typeId=13 get-multiple =====
+    elif tid in (7, 13):
         aid = str(n.get("actionId", 0) or 0)
         mode = ACTION_ID_NAME.get(aid, f"查询(aid={aid})" if aid != "0" else "")
         entry["mode"] = mode
@@ -529,8 +509,8 @@ def _summarize_node(n, orphan=False):
             if translated:
                 entry["conditions"] = translated
 
-    # ===== typeId=9: Delay =====
-    elif tid == 9:
+    # ===== typeId=12: Delay. typeId=9 is calculation, not a wait. =====
+    elif tid == 12:
         exec_time = n.get("executeTime", "")
         if exec_time:
             entry["delay"] = exec_time
@@ -545,8 +525,8 @@ def _summarize_node(n, orphan=False):
             TID_MAP = {"1": "新增记录时", "2": "新增或编辑时", "3": "删除记录时", "4": "编辑记录时"}
             entry["trigger"] = TID_MAP.get(str(trigger_id), f"triggerId={trigger_id}")
 
-    # ===== typeId=13: Webhook / API request =====
-    elif tid == 13:
+    # ===== typeId=8: API request. typeId=13 is get-multiple, handled above. =====
+    elif tid == 8:
         method = n.get("method", "")
         url = n.get("url", "") or ""
         if method or url:

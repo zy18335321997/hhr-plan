@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Generate references/topology-<project>.md from dependency_graph.json.
+Generate <workflow-output>/<project>/topology.md from dependency_graph.json.
+
+The map stays in the local project directory. Do not write it back into this repository.
 
 Usage:
-    python3 scripts/generate_topology.py 几建
+    python3 scripts/generate_topology.py example-alpha
     python3 scripts/generate_topology.py --all
 """
 
@@ -14,11 +16,10 @@ from collections import defaultdict
 
 BASE = os.path.expanduser("~/Documents/workflow-output")
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
-TOPOLOGY_DIR = os.path.join(os.path.dirname(SKILL_DIR), "references")
 
 
 def topology_path(project_name):
-    return os.path.join(TOPOLOGY_DIR, f"topology-{project_name}.md")
+    return os.path.join(BASE, project_name, "topology.md")
 
 # Threshold: sheets with total r/w >= MIN_ACTIVITY get lifecycle details
 MIN_ACTIVITY = 4
@@ -253,9 +254,10 @@ def main():
         md = generate_topology_md(pn)
         if md:
             out_path = topology_path(pn)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(md)
-            print(f"{pn}: topology-{pn}.md regenerated ({len(md):,} chars)")
+            print(f"{pn}: {out_path} regenerated ({len(md):,} chars)")
 
 
 if __name__ == "__main__":

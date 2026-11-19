@@ -128,8 +128,8 @@ conductor daemon → lane-serialized build queue
 
 ```
 安装: pip (venv) hap-cli v0.8.19
-登录: hap auth login https://work.jijiansmart.com
-用户: 张银 (org: 同技智能)
+登录: hap auth login https://work.example.com
+用户: example-user (org: example-org)
 
 验证通过:
   ✅ workflow create/delete/list/structure/get

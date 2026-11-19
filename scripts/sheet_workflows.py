@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 DATA = Path.home() / "Documents" / "workflow-output"
-SKILL = Path.home() / ".claude" / "skills" / "hhr-plan" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 _TRIGGER_MAP = {0: "工作表事件", 1: "自定义动作", 2: "定时触发",
                 3: "审批流程", 4: "子流程", 5: "封装业务流程"}
@@ -87,7 +87,7 @@ def _build_truth_map(project: str) -> dict[str, dict]:
     for ch in "新增 发布 修改 删除 审批 采购 任务 出库 入库 合同".split():
         try:
             r = subprocess.run(
-                ["python3", str(SKILL / "search.py"), ch, "--type", "workflow",
+                ["python3", str(SCRIPT_DIR / "search.py"), ch, "--type", "workflow",
                  "-p", project, "-f", "json"],
                 capture_output=True, text=True, timeout=10
             )

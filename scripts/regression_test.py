@@ -2,9 +2,9 @@
 """Mode D 审计回归测试 — 对确定性审计指标做快照回归。
 
 用法:
-  python3 regression_test.py --project 几建
-  python3 regression_test.py --project 几建 --update-golden
-  python3 regression_test.py --project 几建 --quiet
+  python3 regression_test.py --project example-alpha
+  python3 regression_test.py --project example-alpha --update-golden
+  python3 regression_test.py --project example-alpha --quiet
   python3 regression_test.py --check-format    # CI: 只验证 snapshot 格式
   python3 regression_test.py --project ci-minimal --fixture-dir tests/fixtures/regression
 
@@ -412,7 +412,7 @@ def cmd_check_format(
 
 def main():
     parser = argparse.ArgumentParser(description="Mode D 审计回归测试")
-    parser.add_argument("--project", help="项目名称 (如 几建)")
+    parser.add_argument("--project", help="项目名称 (如 example-alpha)")
     parser.add_argument("--update-golden", action="store_true", help="刷新 golden snapshot")
     parser.add_argument("--quiet", action="store_true", help="精简输出")
     parser.add_argument("--check-format", action="store_true",

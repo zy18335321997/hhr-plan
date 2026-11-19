@@ -242,6 +242,25 @@ jobs:
           --fixture-dir tests/fixtures/regression
           --quiet
 
+  secret-and-type-map:
+    name: Secret Scan And Type Map
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Scan worktree and history, including JavaScript
+        run: python3 scripts/scan_secrets.py --worktree --history
+
+      - name: Fail if node type maps drift
+        run: python3 -m unittest tests/test_type_ids.py
+
   whitespace:
     name: Commit Range Whitespace Check
     runs-on: ubuntu-latest

@@ -193,7 +193,7 @@ def build_context(project_root):
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 build_context.py <project_name>")
-        print("Example: python3 build_context.py 几建")
+        print("Example: python3 build_context.py example-alpha")
         sys.exit(1)
 
     project_name = sys.argv[1]

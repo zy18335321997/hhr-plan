@@ -22,7 +22,7 @@ import sys
 import urllib.request
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 __all__ = [
     "PlatformError",
@@ -120,34 +120,80 @@ def _extract_cookie(cookie_str, name):
     return ""
 
 
-def get_auth_headers(domain):
-    """域级认证头；无 Chrome Cookie 时返回 None。
+def _session_headers(cookie_header: str) -> dict | None:
+    """Keep only md_pss_id. Drop every other cookie the jar may have held."""
+    token = _extract_cookie(cookie_header or "", "md_pss_id")
+    if not token:
+        return None
+    return {
+        "Cookie": f"md_pss_id={token}",
+        "Authorization": f"md_pss_id {token}",
+    }
+
+
+def get_auth_headers(domain, parent_domain=None):
+    """域级认证头；无匹配的 md_pss_id 时返回 None。
 
     auth.py 的 print 走 stdout —— 重定向到 stderr，保持 CLI stdout 纯 JSON。
-    Cookie 含 md_pss_id 时追加 `Authorization: md_pss_id <token>`。
+    只转发 md_pss_id。裸域名命中多个主机时抛 PlatformError，而不是把多个会话一起发出。
     """
     auth = _load_auth_module()
     if auth is None:
         return None
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            headers = auth.get_auth_headers(domain)
-        except Exception:
+            headers = auth.get_auth_headers(domain, parent_domain=parent_domain)
+        except Exception as e:
+            if type(e).__name__ == "CookieScopeError":
+                raise PlatformError(str(e)) from None
             return None
     if not headers:
         return None
-    token = _extract_cookie(headers.get("Cookie", ""), "md_pss_id")
-    if token:
-        headers = dict(headers)
-        headers["Authorization"] = f"md_pss_id {token}"
-    return headers
+    session = _session_headers(headers.get("Cookie", ""))
+    if not session:
+        return None
+    merged = dict(headers)
+    merged.update(session)
+    return merged
 
 
 # ---------------------------------------------------------------------------
 # 网络层（唯一网络缝，测试替换 _urlopen_json）
 # ---------------------------------------------------------------------------
+def origin_key(url):
+    """scheme, hostname, port. Default ports compare equal to explicit ones."""
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80 if parts.scheme == "http" else None
+    return (parts.scheme, (parts.hostname or "").lower(), port)
+
+
+def same_origin(left, right):
+    left_key = origin_key(left)
+    right_key = origin_key(right)
+    return bool(left_key) and left_key == right_key
+
+
+class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only when the next URL stays on the same origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not same_origin(req.full_url, newurl):
+            current = origin_key(req.full_url)
+            nxt = origin_key(newurl)
+            current_host = current[1] if current else ""
+            next_host = nxt[1] if nxt else ""
+            raise PlatformError(f"拒绝跨源重定向 {current_host} → {next_host}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _urlopen_json(req, timeout=15):
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    opener = urllib.request.build_opener(_SameOriginRedirectHandler)
+    with opener.open(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -182,34 +228,80 @@ def fetch_json(origin, path, domain=None, method="GET", payload=None):
 # ---------------------------------------------------------------------------
 # 内部 API 封装
 # ---------------------------------------------------------------------------
-def fetch_workflow_nodes(origin, pid):
-    """节点接口跨平台一致：GET /api/workflow/flowNode/get → data.flowNodeMap（dict）。"""
-    data = fetch_json(origin, f"/api/workflow/flowNode/get?processId={pid}&count=200",
-                      domain=derive_cookie_domain(origin))
+NODE_FETCH_LIMIT = 200
+LIST_PAGE_SIZE = 500
+_MAX_LIST_PAGES = 100
+
+
+def _nodes_from_payload(origin, data):
     inner = data.get("data", data) if isinstance(data, dict) else None
     if isinstance(inner, dict) and "flowNodeMap" in inner:
         fm = inner["flowNodeMap"]
         if isinstance(fm, dict):
-            return list(fm.values())
+            return list(fm.values()), inner
         if isinstance(fm, list):
-            return fm
+            return fm, inner
         raise PlatformError(f"{origin}: flowNodeMap 形状不可识别")
     if isinstance(inner, list):
-        return inner
+        return inner, inner if isinstance(data, dict) else {}
     raise PlatformError(f"{origin}: 节点接口响应形状不可识别")
 
 
-def _list_probes(app_id):
-    """列表接口各平台版本不一，按序探测。"""
-    return (
-        ("v1/process/listAll", "GET",
-         f"/api/workflow/v1/process/listAll?relationId={app_id}", None),
-        ("process/getProcessList", "POST",
-         "/api/process/getProcessList",
-         {"appId": app_id, "pageIndex": 1, "pageSize": 1000}),
-        ("v1/process/list", "GET",
-         f"/api/workflow/v1/process/list?relationId={app_id}&pageSize=500", None),
+def fetch_workflow_nodes(origin, pid):
+    """节点接口：GET /api/workflow/flowNode/get。
+
+    返回 {"nodes", "incomplete", "limit"}。响应达到 count 上限，或声明的总数
+    大于实际返回条数时，incomplete 为 True。
+    """
+    query = urlencode({"processId": pid, "count": NODE_FETCH_LIMIT})
+    data = fetch_json(
+        origin,
+        f"/api/workflow/flowNode/get?{query}",
+        domain=derive_cookie_domain(origin),
     )
+    nodes, inner = _nodes_from_payload(origin, data)
+    total = None
+    if isinstance(inner, dict):
+        for key in ("count", "total", "nodeCount"):
+            if isinstance(inner.get(key), int):
+                total = inner[key]
+                break
+    incomplete = len(nodes) >= NODE_FETCH_LIMIT or (
+        total is not None and total > len(nodes)
+    )
+    return {"nodes": nodes, "incomplete": incomplete, "limit": NODE_FETCH_LIMIT}
+
+
+def _list_request(app_id, index, page):
+    """三个列表端点。查询参数全部编码，page 从 1 开始。"""
+    paging = {"pageIndex": page, "pageSize": LIST_PAGE_SIZE}
+    if index == 0:
+        query = urlencode({"relationId": app_id, **paging})
+        return (
+            "v1/process/listAll",
+            "GET",
+            f"/api/workflow/v1/process/listAll?{query}",
+            None,
+        )
+    if index == 1:
+        return (
+            "process/getProcessList",
+            "POST",
+            "/api/process/getProcessList",
+            {"appId": app_id, **paging},
+        )
+    query = urlencode({"relationId": app_id, **paging})
+    return (
+        "v1/process/list",
+        "GET",
+        f"/api/workflow/v1/process/list?{query}",
+        None,
+    )
+
+
+def _list_probes(app_id):
+    """第一页探测，供 CLI 报告命中的端点名。"""
+    return tuple(_list_request(app_id, index, 1) for index in range(3))
 
 
 _PROBE_CACHE = {}  # (origin, app_id) -> 命中端点序号（进程内）
@@ -269,42 +361,78 @@ def _normalize_workflows(items):
     return result
 
 
-def fetch_workflow_list(origin, app_id):
-    """按序探测三个列表端点，首个形状可识别的胜出（空列表=成功=应用没流）。
+def _paginate_workflow_list(origin, app_id, index, domain):
+    """翻页直到短页。满页之后没有新 id 时拒绝把截断结果当成完整列表。"""
+    collected = []
+    seen = set()
+    label = ""
+    for page in range(1, _MAX_LIST_PAGES + 1):
+        label, method, path, payload = _list_request(app_id, index, page)
+        data = fetch_json(origin, path, domain=domain, method=method, payload=payload)
+        items = _find_list(data)
+        if items is None:
+            if page == 1:
+                return None
+            raise PlatformError(f"{label}: 第 {page} 页响应形状不可识别")
+        fresh = []
+        for entry in _normalize_workflows(items):
+            key = entry["id"] or entry["name"]
+            if key and key not in seen:
+                seen.add(key)
+                fresh.append(entry)
+        if items and not fresh:
+            raise PlatformError(f"{label}: 分页未返回新工作流，拒绝截断列表")
+        collected.extend(fresh)
+        if len(items) < LIST_PAGE_SIZE:
+            break
+    else:
+        raise PlatformError(f"{label}: 超过 {_MAX_LIST_PAGES} 页仍未结束")
+    return collected
 
-    进程内缓存命中端点；全部失败抛 PlatformError。
+
+def fetch_workflow_list(origin, app_id):
+    """按序探测三个列表端点，翻页直到条数与 count 一致。
+
+    count 接口可用但条数不一致时抛 PlatformError。空列表表示应用没有工作流。
+    进程内缓存命中端点；缓存端点失效时不再静默换端点。
     """
     domain = derive_cookie_domain(origin)
     cache_key = (origin, app_id)
-    probes = _list_probes(app_id)
-    if cache_key in _PROBE_CACHE:
-        label, method, path, payload = probes[_PROBE_CACHE[cache_key]]
-        items = _find_list(fetch_json(origin, path, domain=domain, method=method, payload=payload))
-        if items is None:
-            raise PlatformError(f"{label}: 响应形状不可识别")
-        return _normalize_workflows(items)
+    expected = fetch_workflow_count(origin, app_id)
+    indexes = [_PROBE_CACHE[cache_key]] if cache_key in _PROBE_CACHE else range(3)
     errors = []
-    for index, (label, method, path, payload) in enumerate(probes):
+    for index in indexes:
+        label = _list_request(app_id, index, 1)[0]
         try:
-            data = fetch_json(origin, path, domain=domain, method=method, payload=payload)
+            collected = _paginate_workflow_list(origin, app_id, index, domain)
         except PlatformError as e:
+            if cache_key in _PROBE_CACHE:
+                raise
             errors.append(f"{label}: {e}")
             continue
-        items = _find_list(data)
-        if items is None:
+        if collected is None:
             errors.append(f"{label}: 响应形状不可识别")
+            if cache_key in _PROBE_CACHE:
+                raise PlatformError(errors[-1])
             continue
         _PROBE_CACHE[cache_key] = index
-        return _normalize_workflows(items)
+        if expected is not None and len(collected) != expected:
+            raise PlatformError(
+                f"工作流列表不完整: 返回 {len(collected)} 条，count={expected}"
+            )
+        return collected
     raise PlatformError("工作流列表接口全部不可用: " + "; ".join(errors))
 
 
 def fetch_workflow_count(origin, app_id):
     """GET /api/workflow/v1/process/count — best-effort，失败返回 None。"""
+    query = urlencode({"relationId": app_id, "relationType": 2})
     try:
         data = fetch_json(
-            origin, f"/api/workflow/v1/process/count?relationId={app_id}&relationType=2",
-            domain=derive_cookie_domain(origin))
+            origin,
+            f"/api/workflow/v1/process/count?{query}",
+            domain=derive_cookie_domain(origin),
+        )
     except PlatformError:
         return None
     if not isinstance(data, dict):
@@ -352,6 +480,17 @@ def save_binding(project_dir, *, origin, domain="", app_id="", pid="", source=""
     }
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return data
+
+
+def resolve_binding_app_id(url_app_id, mcp_app_id=""):
+    """platform.json 的 app_id 只来自 URL。MCP 的 app id 不一致时拒绝写入。"""
+    url_app = (url_app_id or "").strip()
+    mcp_app = (mcp_app_id or "").strip()
+    if mcp_app and url_app and mcp_app != url_app:
+        raise PlatformError("MCP app id 与 URL app id 不一致，拒绝写入 platform.json")
+    if not url_app:
+        raise PlatformError("URL 中没有 app id，拒绝用 MCP app id 写入 platform.json")
+    return url_app
 
 
 def resolve_binding(project_dir, url=None):
@@ -409,7 +548,9 @@ def _cmd_probe(args):
     pid = args.pid or parsed.get("pid") or ""
     if pid:
         try:
-            result["node_count"] = len(fetch_workflow_nodes(origin, pid))
+            fetched = fetch_workflow_nodes(origin, pid)
+            result["node_count"] = len(fetched["nodes"])
+            result["nodes_incomplete"] = fetched["incomplete"]
         except PlatformError as e:
             result["nodes_error"] = str(e)
     print(json.dumps(result, ensure_ascii=False, indent=2))

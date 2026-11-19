@@ -1,6 +1,6 @@
 # 可复用模式库
 
-> 从几建（338个工作流）提炼的业务模式和工作流设计模板。Mode A/B 设计时作为起点，减少重复造轮子。
+> 从example-alpha（338个工作流）提炼的业务模式和工作流设计模板。Mode A/B 设计时作为起点，减少重复造轮子。
 
 ## 目录结构
 
@@ -40,7 +40,7 @@ patterns/
 
 设计时加载 `built-in-skills/pattern-select.md`，按**数据流签名**匹配：
 
-| 模式 | 文件 | 数据流签名 | 几建占比 | 典型场景 |
+| 模式 | 文件 | 数据流签名 | example-alpha占比 | 典型场景 |
 |------|------|----------|---------|---------|
 | Pattern A 数据聚合 | `modules/pattern-a-data-interrogation.md` | Query→Query→Query | ~15% | 多源聚合查询后操作 |
 | Pattern B 条件迭代 | `modules/pattern-b-conditional-iteration.md` | Branch→... | ~12% | 多路径条件分支决策 |
@@ -52,7 +52,7 @@ patterns/
 
 设计时按**业务场景**匹配，加载对应目录下的 `_index.md` 查自动选择表。
 
-| 目录 | 模式数 | 自动选择表 | 几建证据 |
+| 目录 | 模式数 | 自动选择表 | example-alpha证据 |
 |------|--------|----------|---------|
 | `approval/` | 6 | 审批单人→single-sign / 多级→multi-level / 条件→conditional / 退回→retreat-refill | 65个审批流 |
 | `trigger/` | 6 | 人工决策→button / 数据级联→event / 复用逻辑→subprocess | 338个流全量 |
@@ -75,4 +75,4 @@ patterns/
 - 最小节点链（T0→Tn 模板）
 - 常见变体（含复杂度分级）
 - 公理约束（逐节点对照表）
-- 几建证据（数据支撑）
+- example-alpha证据（数据支撑）

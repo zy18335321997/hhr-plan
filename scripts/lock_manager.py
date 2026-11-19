@@ -3,10 +3,10 @@
 
 Usage:
     # 从项目上下文 + 设计输出生成 lock 骨架
-    python3 lock_manager.py init 几建 --mode A --source-design design.md --output path/to/execution_lock.json
+    python3 lock_manager.py init example-alpha --mode A --source-design design.md --output path/to/execution_lock.json
 
     # 验证 lock 文件（表/字段存在性 + 关联环路）
-    python3 lock_manager.py validate 几建 path/to/execution_lock.json
+    python3 lock_manager.py validate example-alpha path/to/execution_lock.json
 
     # 合并更新（Mode B 增量修改后更新 lock）
     python3 lock_manager.py merge path/to/execution_lock.json --update path/to/update.json

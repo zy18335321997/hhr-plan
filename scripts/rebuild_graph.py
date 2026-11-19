@@ -8,8 +8,8 @@ Supports two data sources:
     (extracts R/W from raw node typeId/actionId/selectNodeName)
 
 Usage:
-    python3 scripts/rebuild_graph.py 几建
-    python3 scripts/rebuild_graph.py 几建 --lifecycle 采购需求  # read-only query
+    python3 scripts/rebuild_graph.py example-alpha
+    python3 scripts/rebuild_graph.py example-alpha --lifecycle 采购需求  # read-only query
 """
 
 import json, os, sys, re

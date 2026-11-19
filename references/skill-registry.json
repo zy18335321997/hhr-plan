@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T10:30:41.287446+00:00",
+  "generated_at": "2026-11-19T11:18:22.518377+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -578,7 +578,7 @@
       "arguments": []
     },
     "generate_topology.py": {
-      "description": "Generate references/topology-<project>.md from dependency_graph.json.",
+      "description": "Generate <workflow-output>/<project>/topology.md from dependency_graph.json.",
       "arguments": []
     },
     "lock_manager.py": {
@@ -626,6 +626,13 @@
         "--check-format",
         "--fixture-dir",
         "--data-root"
+      ]
+    },
+    "scan_secrets.py": {
+      "description": "Scan the worktree and git history for credential-shaped strings.",
+      "arguments": [
+        "--worktree",
+        "--history"
       ]
     },
     "search.py": {

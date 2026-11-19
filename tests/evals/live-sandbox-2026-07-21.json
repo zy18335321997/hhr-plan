@@ -1,15 +1,15 @@
 {
   "date": "2026-07-21",
   "environment": {
-    "host": "http://yuehu.yikuaida.cn",
-    "app_id": "c27f2468-49e5-48f4-ad1f-7342cc3637e1",
+    "host": "http://sandbox.example.com",
+    "app_id": "00000000-0000-4000-8000-000000000003",
     "app_name": "CRM",
     "isolation": "dedicated temporary worksheet and workflow"
   },
   "temporary_objects": {
-    "worksheet_id": "6a5f85f5ad0dd7e1ab8df438",
-    "workflow_id": "6a5f86973068384df36f5d74",
-    "record_row_id": "7dfd07f7-01d9-4221-b01f-f041bc199c42",
+    "worksheet_id": "000000000000000000000001",
+    "workflow_id": "000000000000000000000002",
+    "record_row_id": "00000000-0000-4000-8000-000000000005",
     "cleanup": "verified"
   },
   "checks": {

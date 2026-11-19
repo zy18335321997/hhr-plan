@@ -83,7 +83,7 @@
 - 删除 `agents/scripts/diagnose.py`：与 `scripts/diagnose.py` 字节级相同且全库无引用。
 - 删除 `agents/scripts/build_context.py`：全库无引用，`scripts/build_context.py`
   是包含字段 ID 解析修复的后继真源。
-- 删除 `references/global-topology.md`：与 `references/topology-几建.md`
+- 删除 `references/global-topology.md`：与 `references/topology-example-alpha.md`
   字节级相同；生成器的规范产物是 `topology-<project>.md`。
 - 保留 `scripts/inject_nodes_v2.js`：无运行时引用，但它支持 `inject_all.js`
   不覆盖的旧 API 兼容/PID 列表路径；继续不进入默认加载链。
@@ -107,14 +107,14 @@
 2026-07-21 只读运行 `bash scripts/doctor.sh --quiet` 得到 3 个错误。这些都位于
 `~/Documents/workflow-output` 的外部运行时数据，本轮按要求只记录、不修改：
 
-1. `城市运营` 的 `project_context.json` 无有效 worksheets。
-2. `经济开发区城市运营中心` 的 `_node_data.json` 无效或为空。
-3. `莱尔德` 的 `_node_data.json` 为 427 个工作流，而 manifest 为 0，计数严重不一致。
+1. `example-civic` 的 `project_context.json` 无有效 worksheets。
+2. `example-civic` 的 `_node_data.json` 无效或为空。
+3. `example-manufacturing` 的 `_node_data.json` 为 427 个工作流，而 manifest 为 0，计数严重不一致。
 - 已从当前工作树移除的 HAP 凭证仍可能存在于 Git 历史。凭证轮换、吊销或历史
   重写属于仓库外/破坏性操作，本次未自动执行，维护者必须单独处理。
-- 本机 `doctor.sh --quiet` 发现 3 个运行时数据问题：`城市运营` 的
-  `project_context.json` 无有效 worksheets、`经济开发区城市运营中心` 的
-  `_node_data.json` 为空、`莱尔德` 的节点数与 manifest 严重不一致。这些文件位于
+- 本机 `doctor.sh --quiet` 发现 3 个运行时数据问题：`example-civic` 的
+  `project_context.json` 无有效 worksheets、`example-civic` 的
+  `_node_data.json` 为空、`example-manufacturing` 的节点数与 manifest 严重不一致。这些文件位于
   `~/Documents/workflow-output`，不属于本次仓库治理范围。
 
 ## 实施记录
@@ -167,7 +167,7 @@
   状态完备 9.25、可执行细节 8.0，达到预设目标。
 - `hap-flow-exec` 已建立独立 Git 基线；新增 contract→batch DSL、live preflight、
   execution_state 和失败分类。真实写入测试等待用户提供沙箱。
-- 2026-07-21 在 `yuehu.yikuaida.cn` CRM 应用中新建隔离工作表和工作流完成实机
+- 2026-07-21 在 `sandbox.example.com` CRM 应用中新建隔离工作表和工作流完成实机
   验收：live preflight、事件触发、batch-add、save-action(type=9+option key)、
   结构复核、发布、记录触发和 execution_state 全部通过；测试工作流与工作表已删除，
   清理后原有工作流仍为 37 个。证据见
@@ -220,7 +220,7 @@
   3. `GET /api/workflow/v1/process/list?relationId=<app>&pageSize=500`
   首个"形状可识别"端点胜出（空列表=成功，表示应用没流），进程内缓存命中端点。
 - **legacy CLI 仅无绑定时走**：绑定存在但路由失败 → 直接回落 MCP，不误调
-  写死 work.jijiansmart.com 的 hap-bridge（几建行为零回归）。
+  写死 work.example.com 的 hap-bridge（example-alpha行为零回归）。
 - **platform.json 只在成功时落盘**：--url 打错/未登录不污染绑定；url 优先于文件。
 - **extract-project 三处 cookie 域兜底删除**：域推导失败 → 打印 skip 并返回空，
   不静默落回硬编码域名。

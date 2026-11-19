@@ -11,8 +11,8 @@
   python3 extract-via-browser.py <项目名> <base_url> <app_id>
 
 示例:
-  python3 extract-via-browser.py 尚策 http://schg.yikuaida.cn 0bce9d4c-210a-4751-a91e-3b2151bb4165
-  python3 extract-via-browser.py 城市运营 http://cy.jkqzhyj.com:81 f5411118-92d3-4f4c-b6d9-92993f48ab33
+  python3 extract-via-browser.py example-beta http://app.example.com 00000000-0000-4000-8000-000000000001
+  python3 extract-via-browser.py example-civic http://civic.example.com:81 00000000-0000-4000-8000-000000000002
 
 等于 extract-project.py 的无 MCP 替代路径。
 """
@@ -392,7 +392,7 @@ def _build_outputs(project_name: str, output_dir: str, data: dict,
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print("用法: python3 extract-via-browser.py <项目名> <base_url> <app_id>")
-        print("示例: python3 extract-via-browser.py 尚策 http://schg.yikuaida.cn 0bce9d4c-210a-4751-a91e-3b2151bb4165")
+        print("示例: python3 extract-via-browser.py example-beta http://app.example.com 00000000-0000-4000-8000-000000000001")
         sys.exit(1)
 
     project = sys.argv[1]

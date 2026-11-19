@@ -12,7 +12,7 @@ from pathlib import Path
 
 HAP = Path.home() / ".claude" / "mcp-servers" / "hap-bridge" / "cli.py"
 DATA = Path.home() / "Documents" / "workflow-output"
-SKILL = Path.home() / ".claude" / "skills" / "hhr-plan" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 def get_all_pids(project: str) -> list[str]:
@@ -51,7 +51,7 @@ def main():
     for i, pid in enumerate(pids):
         try:
             r = subprocess.run(
-                ["python3", str(SKILL / "wf_fetch.py"), project, pid, "--force-remote"],
+                ["python3", str(SCRIPT_DIR / "wf_fetch.py"), project, pid, "--force-remote"],
                 capture_output=True, text=True, timeout=40
             )
             if r.returncode == 0 and _is_success(r.stdout):
@@ -68,7 +68,7 @@ def main():
 
     # Rebuild sheet index from fresh caches
     print("[rebuild] Rebuilding sheet_workflows.json...", file=sys.stderr)
-    subprocess.run(["python3", str(SKILL / "sheet_workflows.py"), project, "--rebuild"])
+    subprocess.run(["python3", str(SCRIPT_DIR / "sheet_workflows.py"), project, "--rebuild"])
 
 
 if __name__ == "__main__":

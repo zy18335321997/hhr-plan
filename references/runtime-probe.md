@@ -170,7 +170,7 @@ manifest 和 runtime probe 互补使用：
 | 操作层 | 认证方式 | 就绪条件 |
 |--------|---------|---------|
 | MCP 代理 (数据操作) | HAP-Appkey + HAP-Sign (URL内嵌) | 始终可用 |
-| CLI wf-* (工作流) | Chrome cookies (md_pss_id) | Chrome 登录 work.jijiansmart.com |
+| CLI wf-* (工作流) | Chrome cookies (md_pss_id) | Chrome 登录 work.example.com |
 | CLI wf-* --chrome (CSRF写操作) | Chrome AppleScript | Chrome 运行中 + 页面打开 |
 
 ```bash

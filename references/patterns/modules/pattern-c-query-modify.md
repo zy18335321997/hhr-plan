@@ -1,7 +1,7 @@
 # Pattern C: 查询-修改（Query-Modify）
 
 > 最常见的工作流模式。查一张表、改一张表（或同一张表），完成一次状态转换。
-> 数据流签名: 1 read → 1 write | 几建占比: 48.6%
+> 数据流签名: 1 read → 1 write | example-alpha占比: 48.6%
 
 ---
 
