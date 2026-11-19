@@ -569,6 +569,10 @@
       "description": "无 MCP 项目提取 — 通过 AppleScript + Chrome Console JS 注入工作流数据。",
       "arguments": []
     },
+    "field_mappings.py": {
+      "description": "Readable 「将字段 / 设为」 mappings for workflow create and update nodes.",
+      "arguments": []
+    },
     "generate_manual.py": {
       "description": "Customer-Facing Operations Guide Generator",
       "arguments": []

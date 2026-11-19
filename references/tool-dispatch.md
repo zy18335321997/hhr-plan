@@ -82,7 +82,7 @@ python3 $SKILL/wf_fetch.py <项目名> <PID或工作流名> [--url <平台URL>]
   ③ 无平台绑定时 → cli.py wf-nodes（legacy，内部 BASE 写死 work.example.com）
   ④ 前两者不可用 → MCP get_workflow_details 兜底（名称+入参，无节点）
 
-`get_workflow_details` 不是节点配置。完整节点 config 先用 `extract-project.py` 的 MCP `get_workflow_structure`（按 tools/list 的 inputSchema 传 workflow_id 或 process_id；approval_block / sub_process 用 config.process.processId 递归）。该工具不存在、返回失败，或没有内部流程 id 时，改走 hap-cli 同款 `flowNode/get`：typeId 16 的 `subProcessId`、typeId 26 的 `processNode.id` / 内联 `flowNodeMap`，并继续向下递归。Chrome `getNodeDetail` 只补仍然为空的 config。
+`get_workflow_details` 不是节点配置。完整节点 config 先用 `extract-project.py` 的 MCP `get_workflow_structure`（按 tools/list 的 inputSchema 传 workflow_id 或 process_id；approval_block / sub_process 用 config.process.processId 递归）。该工具不存在、返回失败，或没有内部流程 id 时，改走 hap-cli 同款 `flowNode/get`：typeId 16 的 `subProcessId`、typeId 26 的 `processNode.id` / 内联 `flowNodeMap`，并继续向下递归。Chrome `getNodeDetail` 补仍然为空的 config，并解析创建/更新节点上尚未变成「将字段 / 设为」的 `$nodeId-controlId$` 与关联字段。可读结果在 `_node_configs.json` 的 `field_mappings`，原始 id 与 token 保留。
   ⑤ --force-remote → 跳过本地缓存，强制从远程拉取并更新缓存
 ```
 

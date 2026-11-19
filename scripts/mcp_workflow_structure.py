@@ -17,6 +17,8 @@ import json
 import os
 import re
 
+import field_mappings
+
 STRUCTURE_TOOL = "get_workflow_structure"
 NESTED_NODE_TYPES = {"approval_block", "sub_process"}
 SNAPSHOT_NAME = "_workflow_structures.json"
@@ -539,7 +541,7 @@ def configs_document(snapshot) -> dict:
         for node in iter_structure_nodes(structure):
             config = node.get("config") if isinstance(node.get("config"), dict) else {}
             node_type = node.get("nodeType") or node.get("triggerType") or ""
-            rows.append({
+            row = {
                 "pid": pid,
                 "wf_name": structure.get("name") or "",
                 "node_id": node.get("nodeId") or "",
@@ -549,7 +551,11 @@ def configs_document(snapshot) -> dict:
                 "config": config,
                 "incomplete": not config,
                 "source": structure.get("source") or "mcp_get_workflow_structure",
-            })
+            }
+            mapping = field_mappings.resolve_field_mappings(node)
+            if mapping:
+                row["field_mappings"] = mapping
+            rows.append(row)
         document[pid] = rows
     return document
 
