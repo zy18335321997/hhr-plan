@@ -69,7 +69,9 @@ python3 scripts/extract-project.py "<项目名>" \
 
 脚本日志只显示 MCP origin；快照与项目 registry 不写入完整 MCP URL。运行新版脚本更新 registry 时，也会移除旧版本遗留的 `mcp_url` 字段。
 
-`get_workflow_details` 只返回触发流程的 id、name、inputParameters、outputParameters，没有节点结构，也不能当作节点配置。节点内部配置走 MCP `get_workflow_structure`：`initialize` 和 `tools/list` 之后按该工具的 inputSchema 传 `workflow_id` 或 `process_id`。`approval_block` / `sub_process` 不内联内部节点，块上的 `config.process.processId` 要再用同一个工具递归拉取。节点 config 为空、内部流程拉不到、或 MCP 没有这个工具时，缺口写在 `_workflow_structures.json` 的 `gaps`，并回退到 Chrome Cookie 的 `getNodeDetail`。只拉一个流程时加 `--process-id`，或把 `--base-url` 设成 `https://your-hap-host.example/workflowedit/<processId>`。
+`get_workflow_details` 只返回触发流程的 id、name、inputParameters、outputParameters，没有节点结构，也不能当作节点配置。节点内部配置先走 MCP `get_workflow_structure`：`initialize` 和 `tools/list` 之后按该工具的 inputSchema 传 `workflow_id` 或 `process_id`。`approval_block` / `sub_process` 不内联内部节点，块上的 `config.process.processId` 要再用同一个工具递归拉取。
+
+这不是唯一的官方路径。hap-cli 的 `hap workflow structure` 使用 legacy `GET /api/workflow/flowNode/get`（v3 `get_process_structure` 当前会 404）。审批块和子流程的内部 id 在这张 `flowNodeMap` 上：typeId 16 读 `subProcessId`（同节点的 `appId` 是工作表，不是内部流程），typeId 26 读 `processNode.id`，内部图可能已经内联在 `processNode.flowNodeMap`。MCP 没有结构工具、调用失败，或 V3 节点没有 `config.process.processId` 时，提取改走这条 `flowNode/get` 递归，包含更深一层的审批块和子流程。Chrome `getNodeDetail` 只补仍然为空的节点 config。缺口写在 `_workflow_structures.json` 的 `gaps`。只拉一个流程时加 `--process-id`，或把 `--base-url` 设成 `https://your-hap-host.example/workflowedit/<processId>`。
 
 多平台（明道云私有部署）提取不写死域名：`scripts/platform_router.py parse/probe`
 解析与探测用户提供的平台 URL，`wf_fetch.py --url` 按该平台路由内部 API；

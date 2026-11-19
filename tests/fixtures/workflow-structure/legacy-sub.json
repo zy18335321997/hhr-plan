@@ -1,0 +1,16 @@
+{
+  "data": {
+    "id": "proc-sub",
+    "startEventId": "s-start",
+    "flowNodeMap": {
+      "s-start": {"id": "s-start", "typeId": 0, "name": "子流程开始"},
+      "s-update": {
+        "id": "s-update",
+        "typeId": 6,
+        "name": "新增记录",
+        "sourceEntityName": "明细",
+        "fields": [{"fieldId": "f2", "fieldValue": "child"}]
+      }
+    }
+  }
+}

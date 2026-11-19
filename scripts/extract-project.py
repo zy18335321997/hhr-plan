@@ -1360,11 +1360,22 @@ def _workflow_pid(workflow: dict) -> str:
     return str(workflow.get("id") or workflow.get("processId") or "").strip()
 
 
+def _fetch_legacy_flow(base_url, process_id):
+    """GET flowNode/get the way hap-cli ``workflow structure`` does. No count cap."""
+    query = urllib.parse.urlencode({"processId": process_id})
+    return platform_router.fetch_json(
+        base_url,
+        f"/api/workflow/flowNode/get?{query}",
+        domain=platform_router.derive_cookie_domain(base_url),
+    )
+
+
 def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_file=None,
                            process_id="", skip_mcp=False) -> dict:
-    """Node config via MCP structure, then Chrome getNodeDetail for whatever is still incomplete.
+    """Node config via MCP V3 structure, then legacy flowNode/get for nested flows.
 
-    get_workflow_details is not used here. It has no node structure.
+    get_workflow_details is not used here. It has no node structure. Chrome
+    getNodeDetail runs only for nodes whose config is still empty.
     """
     if nodes_file:
         return extract_workflow_nodes_from_file(nodes_file, wf_list)
@@ -1377,7 +1388,6 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
                 roots.append(pid)
 
     node_data = {}
-    used_mcp = False
     if mcp_url and not skip_mcp and roots:
         print("--- Phase 3a: MCP get_workflow_structure ---")
         tools = init_and_list_tools(mcp_url)
@@ -1386,34 +1396,61 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
             tools,
             lambda name, args: call_tool(mcp_url, name, args),
         )
-        used_mcp = snapshot.get("tool") is not None
-        if used_mcp:
-            mcp_workflow_structure.persist(project_dir, snapshot)
-            node_data = mcp_workflow_structure.node_data_from_snapshot(snapshot, wf_list)
+        if snapshot.get("tool"):
             print(
                 f"  MCP structures: {len(snapshot.get('processes') or {})} processes, "
                 f"incomplete={snapshot.get('incomplete')}"
             )
         else:
-            mcp_workflow_structure.persist(project_dir, snapshot)
-            print("  [mcp] get_workflow_structure 不可用，节点配置改走 Cookie getNodeDetail")
-        incomplete = mcp_workflow_structure.incomplete_process_ids(snapshot, roots)
+            print("  [mcp] get_workflow_structure 不可用，嵌套流程改走 flowNode/get")
     else:
-        incomplete = set(roots)
+        snapshot = {
+            "source": "mcp_get_workflow_structure",
+            "tool": None,
+            "argument": None,
+            "incomplete": bool(roots),
+            "gaps": [{"reason": "structure_tool_unavailable"}] if roots else [],
+            "processes": {},
+        }
 
-    if incomplete and base_url:
-        print("--- Phase 3b: Chrome 节点详情（MCP 结构缺失或不完整时） ---")
-        known = {_workflow_pid(wf): wf for wf in wf_list or [] if _workflow_pid(wf)}
-        fallback = [
-            known.get(pid) or {"id": pid, "processId": pid, "name": pid, "trigger": "", "worksheet": ""}
-            for pid in sorted(incomplete)
-        ]
-        cookie_data = extract_workflow_nodes(
-            base_url, fallback, project_dir, merge_existing=used_mcp,
+    targets = mcp_workflow_structure.legacy_targets(snapshot, roots) if base_url else []
+    if targets:
+        print("--- Phase 3b: legacy flowNode/get（审批块与子流程） ---")
+        legacy = mcp_workflow_structure.extract_legacy_structures(
+            targets, lambda pid: _fetch_legacy_flow(base_url, pid),
         )
-        node_data.update(cookie_data)
+        snapshot = mcp_workflow_structure.merge_legacy(snapshot, legacy, roots)
+        print(
+            f"  legacy processes: {len(legacy.get('processes') or {})}, "
+            f"incomplete={snapshot.get('incomplete')}"
+        )
+
+    if snapshot.get("processes") or snapshot.get("gaps"):
+        mcp_workflow_structure.persist(project_dir, snapshot)
+        node_data = mcp_workflow_structure.node_data_from_snapshot(snapshot, wf_list)
+        for pid, structure in (snapshot.get("processes") or {}).items():
+            flow_map = structure.get("flowNodeMap")
+            if not isinstance(flow_map, dict) or not flow_map or pid not in node_data:
+                continue
+            summary = summarize_flow_nodes(flow_map)
+            node_data[pid].update({
+                "node_count": summary["node_count"],
+                "reads": sorted(summary["reads"]),
+                "writes": sorted(summary["writes"]),
+                "crud_field_mappings": summary["crud_field_mappings"],
+                "query_empty_actions": summary["query_empty_actions"],
+                "approval_count": summary["approval_count"],
+                "trigger_sheet": summary.get("trigger_sheet") or node_data[pid].get("worksheet") or "",
+            })
+
+    empty_config = [
+        gap for gap in snapshot.get("gaps") or []
+        if gap.get("reason") == "empty_config" and gap.get("process_id")
+    ]
+    if empty_config and base_url:
+        print("--- Phase 3c: Chrome getNodeDetail（仅补空 config） ---")
         extract_node_detail_configs(
-            base_url, node_data, project_dir, merge_existing=used_mcp,
+            base_url, node_data, project_dir, merge_existing=bool(snapshot.get("processes")),
         )
     elif not node_data and not nodes_file:
         print("  [skip] 无 MCP 结构，也没有可用的 Base URL / 节点文件")

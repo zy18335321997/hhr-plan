@@ -5,6 +5,12 @@ get_workflow_details only returns trigger-process metadata. Node structure and
 per-node config come from get_workflow_structure. approval_block and
 sub_process do not inline inner nodes; the inner process id is
 config.process.processId and is fetched with the same tool.
+
+When that tool is missing, the call fails, or the V3 node has no
+config.process.processId, nested flows are read from legacy flowNode/get
+the way hap-cli ``workflow structure`` does: typeId 16 uses subProcessId,
+and typeId 26 uses processNode.id with processNode.flowNodeMap inlined
+when the server already sent it.
 """
 
 import json
@@ -15,6 +21,18 @@ STRUCTURE_TOOL = "get_workflow_structure"
 NESTED_NODE_TYPES = {"approval_block", "sub_process"}
 SNAPSHOT_NAME = "_workflow_structures.json"
 _ARGUMENT_CANDIDATES = ("workflow_id", "process_id", "workflowId", "processId")
+# hap-cli 0.9.14 find_inner_processes. appId on a sub_process node is the
+# worksheet, not the inner flow. v3 get_process_structure 404s; flowNode/get
+# is the structure command.
+SUB_PROCESS_TYPE_ID = 16
+APPROVAL_BLOCK_TYPE_ID = 26
+LEGACY_SOURCE = "legacy_flow_node_get"
+_STRUCTURAL_GAP_REASONS = {
+    "structure_tool_unavailable",
+    "fetch_failed",
+    "nested_fetch_failed",
+    "missing_nested_process_id",
+}
 
 
 def select_structure_tool(tools):
@@ -271,9 +289,229 @@ def node_data_from_snapshot(snapshot, wf_list) -> dict:
             "query_empty_actions": [],
             "approval_count": sum(1 for node in nodes if node.get("nodeType") == "approval_block"),
             "incomplete": flags.get(pid, pid not in processes),
-            "source": "mcp_get_workflow_structure",
+            "source": structure.get("source") or "mcp_get_workflow_structure",
         }
     return rows
+
+
+def flow_node_payload(result):
+    """Unwrap a flowNode/get body to the object that holds flowNodeMap."""
+    if not isinstance(result, dict):
+        return None
+    if result.get("success") is False:
+        return None
+    data = result.get("data") if isinstance(result.get("data"), dict) else result
+    if isinstance(data, dict) and isinstance(data.get("flowNodeMap"), dict):
+        return data
+    return None
+
+
+def _legacy_node(node_id, node) -> dict:
+    """One flowNode/get entry, with the inner process id normalized onto config.process."""
+    stored = dict(node)
+    stored["nodeId"] = node.get("id") or node_id
+    type_id = node.get("typeId")
+    if type_id == SUB_PROCESS_TYPE_ID:
+        stored["nodeType"] = "sub_process"
+        inner = str(node.get("subProcessId") or "").strip()
+        if inner:
+            stored["process"] = {"processId": inner}
+    elif type_id == APPROVAL_BLOCK_TYPE_ID:
+        stored["nodeType"] = "approval_block"
+        process_node = node.get("processNode") if isinstance(node.get("processNode"), dict) else {}
+        inner = str(process_node.get("id") or "").strip()
+        if inner:
+            stored["process"] = {"processId": inner}
+        # The inlined map is stored as its own process. Keep the id, not a second copy.
+        if isinstance(stored.get("processNode"), dict):
+            stored["processNode"] = {
+                key: value for key, value in stored["processNode"].items() if key != "flowNodeMap"
+            }
+    else:
+        stored["nodeType"] = node.get("nodeType") or (f"type_{type_id}" if type_id is not None else "")
+    stored.setdefault("name", node.get("name") or "")
+    config = {key: value for key, value in stored.items() if key != "processNode"}
+    if isinstance(stored.get("processNode"), dict):
+        config["processNode"] = stored["processNode"]
+    stored["config"] = config
+    return stored
+
+
+def legacy_to_structure(process_id, data, via) -> dict:
+    """Convert one flowNode/get object into the snapshot process shape."""
+    flow_map = data.get("flowNodeMap") if isinstance(data.get("flowNodeMap"), dict) else {}
+    start_id = str(data.get("startEventId") or "")
+    trigger = {}
+    nodes = []
+    for node_id, node in flow_map.items():
+        if not isinstance(node, dict):
+            continue
+        converted = _legacy_node(str(node_id), node)
+        if start_id and str(node_id) == start_id:
+            trigger = converted
+            trigger.setdefault("triggerType", converted.get("nodeType") or "trigger")
+        else:
+            nodes.append(converted)
+    return {
+        "processId": data.get("id") or process_id,
+        "name": data.get("name") or "",
+        "description": data.get("description") or "",
+        "source": LEGACY_SOURCE,
+        "via": via,
+        "startEventId": start_id,
+        "trigger": trigger,
+        "nodes": nodes,
+        "flowNodeMap": flow_map,
+    }
+
+
+def _legacy_gap(process_id, reason, **extra):
+    return _gap(process_id, reason, **extra)
+
+
+def extract_legacy_structures(process_ids, fetch_flow) -> dict:
+    """Walk flowNode/get the way hap-cli ``workflow structure`` does.
+
+    typeId 16 reads ``subProcessId`` and fetches that process. typeId 26 reads
+    ``processNode.id``. When ``processNode.flowNodeMap`` is already inlined it
+    is stored without another request, then walked for deeper nesting.
+    ``appId`` is never treated as a process id.
+    """
+    processes = {}
+    gaps = []
+    seen = set()
+    parents_with_children = set()
+
+    def store(pid, data, via):
+        if pid and pid not in processes:
+            processes[pid] = legacy_to_structure(pid, data, via)
+
+    def walk_map(parent_pid, flow_map):
+        if not isinstance(flow_map, dict):
+            return
+        for node_id, node in flow_map.items():
+            if not isinstance(node, dict):
+                continue
+            type_id = node.get("typeId")
+            if type_id == SUB_PROCESS_TYPE_ID:
+                inner = str(node.get("subProcessId") or "").strip()
+                kind = "sub_process"
+            elif type_id == APPROVAL_BLOCK_TYPE_ID:
+                process_node = node.get("processNode") if isinstance(node.get("processNode"), dict) else {}
+                inner = str(process_node.get("id") or "").strip()
+                kind = "approval_block"
+            else:
+                continue
+            if not inner:
+                gaps.append(_legacy_gap(
+                    parent_pid,
+                    "missing_nested_process_id",
+                    node_id=node.get("id") or node_id,
+                    node_type=kind,
+                ))
+                continue
+            parents_with_children.add(parent_pid)
+            inlined = None
+            if type_id == APPROVAL_BLOCK_TYPE_ID and isinstance(node.get("processNode"), dict):
+                if isinstance(node["processNode"].get("flowNodeMap"), dict):
+                    inlined = node["processNode"]
+            if inner in seen and inner in processes:
+                continue
+            seen.add(inner)
+            if inlined is not None:
+                store(inner, {
+                    "id": inner,
+                    "name": inlined.get("name") or node.get("name") or "",
+                    "startEventId": inlined.get("startEventId") or "",
+                    "flowNodeMap": inlined.get("flowNodeMap") or {},
+                }, "processNode.flowNodeMap")
+                walk_map(inner, inlined.get("flowNodeMap") or {})
+                continue
+            try:
+                raw = fetch_flow(inner)
+            except Exception as exc:
+                gaps.append(_legacy_gap(inner, "nested_fetch_failed", detail=exc, parent_process_id=parent_pid))
+                continue
+            payload = flow_node_payload(raw)
+            if payload is None:
+                detail = raw.get("error") or raw.get("error_msg") or "" if isinstance(raw, dict) else ""
+                gaps.append(_legacy_gap(inner, "nested_fetch_failed", detail=detail, parent_process_id=parent_pid))
+                continue
+            store(inner, payload, "subProcessId" if type_id == SUB_PROCESS_TYPE_ID else "processNode.id")
+            walk_map(inner, payload.get("flowNodeMap") or {})
+
+    for process_id in process_ids or []:
+        pid = str(process_id or "").strip()
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        try:
+            raw = fetch_flow(pid)
+        except Exception as exc:
+            gaps.append(_legacy_gap(pid, "fetch_failed", detail=exc))
+            continue
+        payload = flow_node_payload(raw)
+        if payload is None:
+            detail = raw.get("error") or raw.get("error_msg") or "" if isinstance(raw, dict) else ""
+            gaps.append(_legacy_gap(pid, "fetch_failed", detail=detail))
+            continue
+        store(pid, payload, "flowNode/get")
+        walk_map(pid, payload.get("flowNodeMap") or {})
+
+    return {
+        "source": LEGACY_SOURCE,
+        "processes": processes,
+        "gaps": gaps,
+        "parents_with_children": parents_with_children,
+    }
+
+
+def legacy_targets(snapshot, requested) -> list:
+    """Process ids whose V3 result cannot supply nested flows."""
+    gaps = snapshot.get("gaps") or []
+    requested = [str(pid) for pid in requested or [] if pid]
+    if any(gap.get("reason") == "structure_tool_unavailable" for gap in gaps):
+        return requested
+    targets = []
+    for gap in gaps:
+        if gap.get("reason") not in _STRUCTURAL_GAP_REASONS:
+            continue
+        pid = str(gap.get("process_id") or "")
+        if pid and pid not in targets:
+            targets.append(pid)
+    return targets
+
+
+def merge_legacy(snapshot, legacy, requested) -> dict:
+    """Keep V3 processes. Add legacy processes and drop structural gaps they resolved."""
+    processes = dict(snapshot.get("processes") or {})
+    added = set()
+    for pid, process in (legacy.get("processes") or {}).items():
+        if pid not in processes:
+            processes[pid] = process
+            added.add(pid)
+    parents = set(legacy.get("parents_with_children") or [])
+    requested = {str(pid) for pid in requested or [] if pid}
+    roots_resolved = bool(requested) and requested <= set(processes)
+    gaps = []
+    for gap in snapshot.get("gaps") or []:
+        reason = gap.get("reason")
+        pid = str(gap.get("process_id") or "")
+        if reason == "structure_tool_unavailable" and roots_resolved:
+            continue
+        if reason in {"fetch_failed", "nested_fetch_failed"} and pid in added:
+            continue
+        if reason == "missing_nested_process_id" and pid in parents:
+            continue
+        gaps.append(gap)
+    gaps.extend(legacy.get("gaps") or [])
+    merged = dict(snapshot)
+    merged["processes"] = processes
+    merged["gaps"] = gaps
+    merged["incomplete"] = bool(gaps)
+    if added:
+        merged["legacy_source"] = LEGACY_SOURCE
+    return merged
 
 
 def nodes_document(snapshot) -> dict:
@@ -282,7 +520,7 @@ def nodes_document(snapshot) -> dict:
     for pid, structure in (snapshot.get("processes") or {}).items():
         entry = {
             "_name": structure.get("name") or "",
-            "_source": "mcp_get_workflow_structure",
+            "_source": structure.get("source") or "mcp_get_workflow_structure",
             "_process_id": structure.get("processId") or pid,
         }
         for node in iter_structure_nodes(structure):
@@ -310,7 +548,7 @@ def configs_document(snapshot) -> dict:
                 "type_label": node_type,
                 "config": config,
                 "incomplete": not config,
-                "source": "mcp_get_workflow_structure",
+                "source": structure.get("source") or "mcp_get_workflow_structure",
             })
         document[pid] = rows
     return document

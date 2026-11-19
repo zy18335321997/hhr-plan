@@ -204,8 +204,81 @@ class StructureWalkTests(unittest.TestCase):
         self.assertGreater(rows["proc-approval-inner"]["node_count"], 0)
 
 
+class LegacyFlowNodeTests(unittest.TestCase):
+    def test_inlined_approval_and_subprocess_id_recurse(self):
+        calls = []
+
+        def fetch_flow(pid):
+            calls.append(pid)
+            if pid == "proc-main":
+                return _load("legacy-main.json")
+            if pid == "proc-sub":
+                return _load("legacy-sub.json")
+            raise AssertionError(pid)
+
+        legacy = structure.extract_legacy_structures(["proc-main"], fetch_flow)
+        self.assertEqual(calls, ["proc-main", "proc-sub"])
+        self.assertNotIn("ws-sheet", calls)
+        self.assertNotIn("ws-not-a-process", calls)
+        self.assertEqual(
+            set(legacy["processes"]),
+            {"proc-main", "proc-approval", "proc-sub", "proc-approval-2"},
+        )
+        approval = legacy["processes"]["proc-approval"]
+        sub_node = next(node for node in approval["nodes"] if node["nodeId"] == "a-sub")
+        self.assertEqual(sub_node["config"]["process"]["processId"], "proc-sub")
+        self.assertNotIn("flowNodeMap", sub_node["config"].get("processNode", {}))
+        deeper = legacy["processes"]["proc-approval-2"]["flowNodeMap"]["b-update"]
+        self.assertEqual(deeper["fields"][0]["fieldId"], "f9")
+        self.assertEqual(legacy["gaps"], [])
+
+    def test_approval_without_inlined_map_is_fetched_by_id(self):
+        calls = []
+
+        def fetch_flow(pid):
+            calls.append(pid)
+            if pid == "proc-main":
+                body = _load("legacy-main.json")
+                process_node = body["data"]["flowNodeMap"]["n-approve"]["processNode"]
+                process_node.pop("flowNodeMap")
+                return body
+            if pid == "proc-approval":
+                return {
+                    "data": {
+                        "id": "proc-approval",
+                        "startEventId": "a-start",
+                        "flowNodeMap": {
+                            "a-start": {"id": "a-start", "typeId": 0, "name": "审批开始"},
+                        },
+                    }
+                }
+            raise AssertionError(pid)
+
+        legacy = structure.extract_legacy_structures(["proc-main"], fetch_flow)
+        self.assertIn("proc-approval", calls)
+        self.assertIn("proc-approval", legacy["processes"])
+
+    def test_v3_gap_is_filled_from_legacy_shape(self):
+        v3 = {
+            "source": "mcp_get_workflow_structure",
+            "tool": None,
+            "argument": None,
+            "incomplete": True,
+            "gaps": [{"reason": "structure_tool_unavailable"}],
+            "processes": {},
+        }
+        legacy = structure.extract_legacy_structures(
+            ["proc-main"],
+            lambda pid: _load("legacy-main.json") if pid == "proc-main" else _load("legacy-sub.json"),
+        )
+        merged = structure.merge_legacy(v3, legacy, ["proc-main"])
+        self.assertFalse(merged["incomplete"])
+        self.assertIn("proc-sub", merged["processes"])
+        self.assertEqual(merged["processes"]["proc-sub"]["source"], "legacy_flow_node_get")
+
+
 class ExtractProjectWiringTests(unittest.TestCase):
-    def test_incomplete_structure_still_calls_cookie_fallback(self):
+    def test_empty_v3_config_uses_get_node_detail_not_a_full_refetch(self):
         extract_project = _extract_project()
 
         def call_tool(url, name, args):
@@ -215,26 +288,23 @@ class ExtractProjectWiringTests(unittest.TestCase):
                 "proc-sub-inner": _load("subprocess-inner.json"),
             }[args["workflow_id"]]
 
-        seen = {}
-
-        def cookie(base_url, workflows, project_dir, merge_existing=False):
-            seen["merge"] = merge_existing
-            seen["ids"] = [wf["id"] for wf in workflows]
-            return {}
-
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch.object(extract_project, "init_and_list_tools", return_value=[_tool()]), \
              mock.patch.object(extract_project, "call_tool", side_effect=call_tool), \
-             mock.patch.object(extract_project, "extract_workflow_nodes", side_effect=cookie), \
-             mock.patch.object(extract_project, "extract_node_detail_configs", return_value={}):
+             mock.patch.object(extract_project, "extract_workflow_nodes") as cookie, \
+             mock.patch.object(extract_project, "extract_node_detail_configs", return_value={}) as detail, \
+             mock.patch.object(extract_project.platform_router, "fetch_json") as legacy:
             extract_project.collect_workflow_nodes(
                 tmp,
                 [{"id": "proc-root", "name": "采购审批示例"}],
                 mcp_url="https://mcp.example/mcp",
                 base_url="https://app.example",
             )
-        self.assertTrue(seen["merge"])
-        self.assertEqual(seen["ids"], ["proc-root"])
+            cookie.assert_not_called()
+            legacy.assert_not_called()
+            detail.assert_called_once()
+            self.assertTrue(detail.call_args.kwargs["merge_existing"])
+
     def test_complete_mcp_structure_does_not_call_cookie_detail(self):
         extract_project = _extract_project()
 
@@ -261,34 +331,38 @@ class ExtractProjectWiringTests(unittest.TestCase):
             saved_nodes = json.loads((Path(tmp) / "nodes.json").read_text(encoding="utf-8"))
             self.assertIn("inner-pass", saved_nodes["proc-approval-inner"])
 
-    def test_missing_structure_tool_falls_back_to_cookie_path(self):
+    def test_missing_structure_tool_uses_legacy_flow_node_get(self):
         extract_project = _extract_project()
 
-        def cookie(base_url, workflows, project_dir, merge_existing=False):
-            self.assertFalse(merge_existing)
-            self.assertEqual([wf["id"] for wf in workflows], ["proc-root"])
-            return {"proc-root": {"name": "cookie", "node_count": 1, "incomplete": False,
-                                  "reads": [], "writes": [], "worksheet": "", "trigger": "",
-                                  "trigger_type_id": -1, "approval_count": 0,
-                                  "crud_field_mappings": [], "query_empty_actions": []}}
+        def fetch_json(origin, path, domain=None, method="GET", payload=None):
+            self.assertIn("flowNode/get", path)
+            if "proc-main" in path:
+                return _load("legacy-main.json")
+            if "proc-sub" in path:
+                return _load("legacy-sub.json")
+            raise AssertionError(path)
 
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch.object(extract_project, "init_and_list_tools",
                                return_value=[{"name": "get_workflow_details"}]), \
              mock.patch.object(extract_project, "call_tool") as mcp_call, \
-             mock.patch.object(extract_project, "extract_workflow_nodes", side_effect=cookie), \
-             mock.patch.object(extract_project, "extract_node_detail_configs", return_value={}) as detail:
+             mock.patch.object(extract_project, "extract_node_detail_configs") as detail, \
+             mock.patch.object(extract_project.platform_router, "fetch_json", side_effect=fetch_json):
             rows = extract_project.collect_workflow_nodes(
                 tmp,
-                [{"id": "proc-root", "name": "采购审批示例"}],
+                [{"id": "proc-main", "name": "采购审批示例", "worksheet": "采购单"}],
                 mcp_url="https://mcp.example/mcp",
                 base_url="https://app.example",
             )
             mcp_call.assert_not_called()
-            detail.assert_called_once()
-            self.assertEqual(rows["proc-root"]["name"], "cookie")
+            detail.assert_not_called()
+            self.assertIn("proc-sub", rows)
+            self.assertIn("proc-approval", rows)
+            self.assertFalse(rows["proc-main"]["incomplete"])
+            self.assertGreater(rows["proc-sub"]["node_count"], 0)
             saved = json.loads((Path(tmp) / "_workflow_structures.json").read_text(encoding="utf-8"))
-            self.assertEqual(saved["gaps"][0]["reason"], "structure_tool_unavailable")
+            self.assertNotIn("structure_tool_unavailable", {gap.get("reason") for gap in saved["gaps"]})
+            self.assertEqual(saved["processes"]["proc-approval"]["source"], "legacy_flow_node_get")
 
 
 if __name__ == "__main__":
