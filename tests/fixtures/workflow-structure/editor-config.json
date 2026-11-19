@@ -1,0 +1,158 @@
+{
+  "_comment": "Synthetic editor payloads. No live process id, host, cookie, credential, or tenant field id. Query lines match the 查询工作表 editor: worksheet, numeric 员工ID equals the trigger 员工ID, both ignore checkboxes, no sort, continue when nothing is found. findFields stays empty because that list is only the 查找并更新 key, not the filter.",
+  "query_node": {
+    "id": "nodeQuery",
+    "nodeId": "nodeQuery",
+    "name": "查询工作表",
+    "typeId": 7,
+    "actionId": 406,
+    "appName": "EmpBasicInfo_员工基本信息",
+    "appTypeName": "工作表",
+    "executeType": 2,
+    "random": false,
+    "findFields": [],
+    "sorts": [],
+    "operateCondition": [],
+    "filters": []
+  },
+  "query_detail": {
+    "appName": "EmpBasicInfo_员工基本信息",
+    "appTypeName": "工作表",
+    "actionId": 406,
+    "executeType": 2,
+    "random": false,
+    "findFields": [],
+    "sorts": [],
+    "formulaMap": {
+      "nodeTrigger-ctrlTriggerEmp": {
+        "nodeName": "工作表事件触发",
+        "name": "员工ID",
+        "type": 6
+      }
+    },
+    "controls": [
+      {"controlId": "ctrlEmpId", "controlName": "员工ID", "type": 6}
+    ],
+    "flowNodeList": [
+      {"nodeId": "nodeTrigger", "nodeName": "工作表事件触发", "appName": "EmpAwards_员工奖项", "appTypeName": "工作表"}
+    ],
+    "conditions": [
+      [
+        {
+          "filedId": "ctrlEmpId",
+          "filedTypeId": 6,
+          "filedValue": "员工ID",
+          "conditionId": "9",
+          "ignoreEmpty": 0,
+          "ignoreValueEmpty": 0,
+          "conditionValues": [
+            {
+              "nodeId": "nodeTrigger",
+              "nodeName": "工作表事件触发",
+              "controlId": "ctrlTriggerEmp",
+              "controlName": "员工ID"
+            }
+          ]
+        }
+      ]
+    ]
+  },
+  "query_or_filters": [
+    {
+      "spliceType": 2,
+      "conditions": [
+        [
+          {
+            "filedId": "ctrlEmpId",
+            "filedTypeId": 6,
+            "filedValue": "员工ID",
+            "conditionId": "9",
+            "ignoreEmpty": 1,
+            "ignoreValueEmpty": 1,
+            "conditionValues": [
+              {"nodeId": "nodeTrigger", "nodeName": "工作表事件触发", "controlId": "ctrlTriggerEmp", "controlName": "员工ID"}
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "spliceType": 2,
+      "conditions": [
+        [
+          {
+            "filedId": "ctrlName",
+            "filedTypeId": 2,
+            "filedValue": "姓名",
+            "conditionId": "3",
+            "conditionValues": [{"value": "张"}]
+          }
+        ]
+      ]
+    }
+  ],
+  "branch_arm": {
+    "id": "armMatch",
+    "nodeId": "armMatch",
+    "name": "员工匹配",
+    "typeId": 2,
+    "nextId": "nodeUpdate",
+    "operateCondition": [],
+    "conditions": [
+      [
+        {
+          "filedId": "ctrlEmpId",
+          "filedTypeId": 6,
+          "filedValue": "员工ID",
+          "conditionId": "9",
+          "ignoreEmpty": 0,
+          "ignoreValueEmpty": 1,
+          "conditionValues": [
+            {"nodeId": "nodeTrigger", "nodeName": "工作表事件触发", "controlId": "ctrlTriggerEmp", "controlName": "员工ID"}
+          ]
+        }
+      ]
+    ]
+  },
+  "branch_else": {
+    "id": "armElse",
+    "nodeId": "armElse",
+    "name": "其他",
+    "typeId": 2,
+    "nextId": "",
+    "operateCondition": []
+  },
+  "branch_open": {
+    "id": "armOpen",
+    "nodeId": "armOpen",
+    "name": "待确认",
+    "typeId": 2,
+    "nextId": "nodeNext",
+    "operateCondition": [[]]
+  },
+  "trigger_node": {
+    "id": "nodeTrigger",
+    "nodeId": "nodeTrigger",
+    "name": "工作表事件触发",
+    "typeId": 0,
+    "appName": "EmpAwards_员工奖项",
+    "appType": 1,
+    "appTypeName": "工作表",
+    "triggerId": "4",
+    "assignFieldIds": ["ctrlStatus"],
+    "controls": [
+      {"controlId": "ctrlStatus", "controlName": "状态", "type": 9}
+    ],
+    "operateCondition": [
+      [
+        {
+          "filedId": "ctrlStatus",
+          "filedTypeId": 9,
+          "filedValue": "状态",
+          "conditionId": "9",
+          "conditionValues": [{"value": "已出库"}]
+        }
+      ]
+    ]
+  }
+}

@@ -71,7 +71,7 @@ python3 scripts/extract-project.py "<项目名>" \
 
 `get_workflow_details` 只返回触发流程的 id、name、inputParameters、outputParameters，没有节点结构，也不能当作节点配置。节点内部配置先走 MCP `get_workflow_structure`：`initialize` 和 `tools/list` 之后按该工具的 inputSchema 传 `workflow_id` 或 `process_id`。`approval_block` / `sub_process` 不内联内部节点，块上的 `config.process.processId` 要再用同一个工具递归拉取。
 
-这不是唯一的官方路径。hap-cli 的 `hap workflow structure` 使用 legacy `GET /api/workflow/flowNode/get`（v3 `get_process_structure` 当前会 404）。审批块和子流程的内部 id 在这张 `flowNodeMap` 上：typeId 16 读 `subProcessId`（同节点的 `appId` 是工作表，不是内部流程），typeId 26 读 `processNode.id`，内部图可能已经内联在 `processNode.flowNodeMap`。MCP 没有结构工具、调用失败，或 V3 节点没有 `config.process.processId` 时，提取改走这条 `flowNode/get` 递归，包含更深一层的审批块和子流程。Chrome `getNodeDetail` 补仍然为空的节点 config，也会把创建/更新节点里尚未解析的 `$nodeId-controlId$` 和关联字段写成编辑器上的「将字段 / 设为」行，保存在 `_node_configs.json` 的 `field_mappings`（原始 fieldId 与 token 仍保留）。缺口写在 `_workflow_structures.json` 的 `gaps`。只拉一个流程时加 `--process-id`，或把 `--base-url` 设成 `https://your-hap-host.example/workflowedit/<processId>`。
+这不是唯一的官方路径。hap-cli 的 `hap workflow structure` 使用 legacy `GET /api/workflow/flowNode/get`（v3 `get_process_structure` 当前会 404）。审批块和子流程的内部 id 在这张 `flowNodeMap` 上：typeId 16 读 `subProcessId`（同节点的 `appId` 是工作表，不是内部流程），typeId 26 读 `processNode.id`，内部图可能已经内联在 `processNode.flowNodeMap`。MCP 没有结构工具、调用失败，或 V3 节点没有 `config.process.processId` 时，提取改走这条 `flowNode/get` 递归，包含更深一层的审批块和子流程。Chrome `getNodeDetail` 补仍然为空的节点 config。结构里筛选条件、分支条件、触发事件或「将字段 / 设为」还是空占位、未解析的 `$nodeId-controlId$` 时，再对那个节点调一次 `getNodeDetail`。可读结果在 `_node_configs.json` 的 `editor_config.lines`；创建/更新节点仍保留 `field_mappings`。原始 fieldId 与 token 留在旁边。立刻结束且条件为空的分支项是默认分支，不会当成拉取失败。延时时长和代码块正文若详情里仍然没有，会写成 `editor_config.gaps`，而不是悄悄丢掉。结构缺口仍在 `_workflow_structures.json` 的 `gaps`。只拉一个流程时加 `--process-id`，或把 `--base-url` 设成 `https://your-hap-host.example/workflowedit/<processId>`。
 
 多平台（明道云私有部署）提取不写死域名：`scripts/platform_router.py parse/probe`
 解析与探测用户提供的平台 URL，`wf_fetch.py --url` 按该平台路由内部 API；
@@ -85,7 +85,7 @@ python3 scripts/extract-project.py "<项目名>" \
 - `project_context.json`：表、字段、关联和命名上下文
 - `business-flow-manifest.json`：工作流读写清单
 - `nodes.json`：原始节点响应。MCP 结构提取时每个流程一张图，含 trigger 与 nodes 的 config
-- `_node_configs.json`：字段级节点详情。MCP 路径保存每个节点的完整 config；创建/更新节点另有 `field_mappings`（「将字段 / 设为」可读行，旁边保留原始 fieldId 与 `$nodeId-controlId$`）
+- `_node_configs.json`：字段级节点详情。MCP 路径保存每个节点的完整 config，以及 `editor_config`（编辑器可读行，旁边保留原始 id 与 token）。创建/更新节点另有 `field_mappings`（「将字段 / 设为」）
 - `_workflow_structures.json`：`get_workflow_structure` 的递归快照和缺口（`gaps`）
 - `_node_data.json`：供搜索和依赖图消费的标准化节点索引
 - `node_configs.json`：旧提取器或单工作流缓存，只通过 `wf_fetch.py` 按 PID 使用

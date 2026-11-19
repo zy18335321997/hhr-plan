@@ -335,7 +335,17 @@ class ExtractProjectWiringTests(unittest.TestCase):
         extract_project = _extract_project()
 
         def fetch_json(origin, path, domain=None, method="GET", payload=None):
-            self.assertIn("flowNode/get", path)
+            if "getNodeDetail" in path:
+                self.assertIn("processId=proc-main", path)
+                self.assertIn("nodeId=n-start", path)
+                self.assertIn("flowNodeType=0", path)
+                return {"data": {
+                    "triggerId": "1",
+                    "appName": "采购单",
+                    "assignFieldIds": [],
+                    "operateCondition": [],
+                }}
+            self.assertIn("/flowNode/get?", path)
             if "proc-main" in path:
                 return _load("legacy-main.json")
             if "proc-sub" in path:
@@ -361,8 +371,11 @@ class ExtractProjectWiringTests(unittest.TestCase):
             self.assertFalse(rows["proc-main"]["incomplete"])
             self.assertGreater(rows["proc-sub"]["node_count"], 0)
             saved = json.loads((Path(tmp) / "_workflow_structures.json").read_text(encoding="utf-8"))
+            configs = json.loads((Path(tmp) / "_node_configs.json").read_text(encoding="utf-8"))
             self.assertNotIn("structure_tool_unavailable", {gap.get("reason") for gap in saved["gaps"]})
             self.assertEqual(saved["processes"]["proc-approval"]["source"], "legacy_flow_node_get")
+            trigger = next(row for row in configs["proc-main"] if row["node_id"] == "n-start")
+            self.assertIn("触发事件：仅新增记录时", trigger["editor_config"]["lines"])
 
 
 if __name__ == "__main__":
