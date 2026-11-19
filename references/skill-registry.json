@@ -608,6 +608,10 @@
       "description": "Fetch workflow node config through MCP get_workflow_structure.",
       "arguments": []
     },
+    "node_editor_config.py": {
+      "description": "Readable editor configuration for every real workflow node.",
+      "arguments": []
+    },
     "platform-validate.py": {
       "description": "平台只读校验占位入口。",
       "arguments": [

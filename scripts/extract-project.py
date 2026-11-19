@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import field_mappings
 import mcp_workflow_structure
+import node_editor_config
 import platform_router
 
 # Node roles come from scripts/verify-platform.py TYPE_NAMES.
@@ -921,13 +922,44 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
     return node_data
 
 
-def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str,
-                                merge_existing: bool = False) -> dict:
-    """Call getNodeDetail for create/update nodes and save readable field mappings.
+def _node_wants_detail(node, siblings=None) -> bool:
+    """Create/update field rows, empty shells, and editor settings the structure hid."""
+    if not isinstance(node, dict) or node_editor_config.is_helper_node(node):
+        return False
+    if node_editor_config.config_is_empty(node):
+        return True
+    if is_field_detail_node(node) or field_mappings.needs_node_detail(node):
+        return True
+    return node_editor_config.needs_editor_detail(node, siblings)
 
-    Reads nodes.json, calls getNodeDetail for type_id 6 create/update nodes,
-    and saves _node_configs.json. field_mappings is the editor line
-    「将字段 X 设为 Y」; controls, fields, and formulaMap keep the raw ids.
+
+def _remember_detail(snapshot, pid, node_id, payload) -> None:
+    """Copy one getNodeDetail body onto the in-memory structure node."""
+    if not isinstance(snapshot, dict):
+        return
+    structure = (snapshot.get("processes") or {}).get(pid)
+    if not isinstance(structure, dict):
+        return
+    for node in mcp_workflow_structure.iter_structure_nodes(structure):
+        current = str(node.get("nodeId") or node.get("id") or "")
+        if current != node_id:
+            continue
+        node_editor_config.merge_detail_into(node, payload)
+        raw_map = structure.get("flowNodeMap")
+        if isinstance(raw_map, dict) and isinstance(raw_map.get(node_id), dict):
+            node_editor_config.merge_detail_into(raw_map[node_id], payload)
+        return
+
+
+def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str,
+                                merge_existing: bool = False, snapshot=None) -> dict:
+    """Call getNodeDetail and save readable editor config.
+
+    Reads nodes.json. Empty shells, create/update rows, and nodes whose
+    editor fields are still unresolved each get one getNodeDetail call.
+    field_mappings stays the 「将字段 / 设为」 block. editor_config is the
+    same kind of readable line for every real node. Raw ids and tokens stay
+    beside those lines.
 
     Returns {pid: [{node_id, node_name, type_id, target_sheet, controls, field_mappings}]}
     """
@@ -955,35 +987,40 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
     with open(nodes_file) as f:
         raw_nodes = json.load(f)
 
-    # Collect all create/update nodes across all workflows
-    detail_jobs = []  # (pid, wf_name, node_id, type_id, node_name, type_label, node)
+    # Create/update rows, empty shells, and nodes whose editor text is still hidden.
+    detail_jobs = []  # (pid, wf_name, node_id, type_id, node_name, type_label, node, siblings)
     for pid, wf_data in raw_nodes.items():
         if not isinstance(wf_data, dict):
             continue
         wf_name = wf_data.get("_name", pid[:16])
+        siblings = {
+            key: value for key, value in wf_data.items()
+            if isinstance(key, str) and not key.startswith("_") and isinstance(value, dict)
+        }
         for nkey, node in wf_data.items():
-            if nkey.startswith("_") or not isinstance(node, dict):
+            if not isinstance(nkey, str) or nkey.startswith("_") or not isinstance(node, dict):
                 continue
-            if is_field_detail_node(node) or field_mappings.needs_node_detail(node):
+            if _node_wants_detail(node, siblings):
                 detail_jobs.append((
                     pid,
                     wf_name,
                     node.get("nodeId") or node.get("id") or nkey,
-                    node.get("typeId", DATA_OPERATION_TYPE),
+                    _detail_type_id(node),
                     node.get("name", ""),
-                    detail_type_label(node),
+                    detail_type_label(node) if is_field_detail_node(node) else (node.get("name") or ""),
                     node,
+                    siblings,
                 ))
 
     if not detail_jobs:
-        print("  No create/update nodes found for detail extraction")
+        print("  No nodes need getNodeDetail")
         return {}
 
-    print(f"  Extracting field-level configs for {len(detail_jobs)} create/update nodes...")
+    print(f"  Extracting editor configs for {len(detail_jobs)} nodes...")
     node_configs = {}
     errors = 0
 
-    for i, (pid, wf_name, node_id, type_id, node_name, type_label, node) in enumerate(detail_jobs):
+    for i, (pid, wf_name, node_id, type_id, node_name, type_label, node, siblings) in enumerate(detail_jobs):
         try:
             query = urllib.parse.urlencode({
                 "processId": pid,
@@ -1048,9 +1085,16 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
             detail_view = field_mappings.prepare_detail(ddata)
             if not detail_view.get("controls") and controls:
                 detail_view["controls"] = controls
+            node_editor_config.merge_detail_into(node, detail_view)
+            _remember_detail(snapshot, pid, node_id, detail_view)
             mapping = field_mappings.resolve_field_mappings(node, detail_view)
             if mapping:
                 config["field_mappings"] = mapping
+            editor = node_editor_config.resolve_editor_config(
+                node, detail_view, flow_nodes=siblings, detail_seen=True,
+            )
+            if editor:
+                config["editor_config"] = editor
             if detail_view.get("fields"):
                 config["fields"] = detail_view.get("fields")
             elif node.get("fields"):
@@ -1089,6 +1133,8 @@ def extract_node_detail_configs(base_url: str, node_data: dict, project_dir: str
             node_configs = previous
     with open(configs_file, "w") as f:
         json.dump(node_configs, f, ensure_ascii=False, indent=2)
+    with open(nodes_file, "w", encoding="utf-8") as handle:
+        json.dump(raw_nodes, handle, ensure_ascii=False, indent=2)
 
     total_nodes = sum(len(v) for v in node_configs.values())
     wf_count = len(node_configs)
@@ -1389,30 +1435,11 @@ def _fetch_legacy_flow(base_url, process_id):
     )
 
 
-_DETAIL_TYPE_BY_NODE = {
-    "create_record": DATA_OPERATION_TYPE,
-    "add_record": DATA_OPERATION_TYPE,
-    "update_record": DATA_OPERATION_TYPE,
-    "batch_create": DATA_OPERATION_TYPE,
-    "batch_update": DATA_OPERATION_TYPE,
-}
-
-
 def _detail_type_id(node) -> int:
-    sources = [node]
-    if isinstance(node, dict) and isinstance(node.get("config"), dict):
-        sources.append(node["config"])
-    for source in sources:
-        if not isinstance(source, dict) or source.get("typeId") is None:
-            continue
-        try:
-            return int(source["typeId"])
-        except (TypeError, ValueError):
-            continue
-    node_type = ""
-    if isinstance(node, dict):
-        node_type = str(node.get("nodeType") or "").lower()
-    return _DETAIL_TYPE_BY_NODE.get(node_type, DATA_OPERATION_TYPE)
+    """flowNodeType for getNodeDetail. Keeps the old data-op default."""
+    if not isinstance(node, dict):
+        return DATA_OPERATION_TYPE
+    return node_editor_config.flow_node_type(node)
 
 
 def _apply_flow_summaries(snapshot, node_data) -> None:
@@ -1504,32 +1531,70 @@ def _field_detail(flat, node) -> dict:
     }
 
 
-def _enrich_readable_field_mappings(base_url, project_dir, snapshot) -> bool:
-    """Resolve $nodeId-controlId$ and unnamed relation fields via getNodeDetail.
+def _flow_index(structure) -> dict:
+    index = {}
+    for node in mcp_workflow_structure.iter_structure_nodes(structure):
+        node_id = str(node.get("nodeId") or node.get("id") or "")
+        if node_id:
+            index[node_id] = node
+    return index
 
-    Structure fetch is unchanged. This only runs for create/update rows whose
-    saved mapping still contains an unresolved formula token or a relation
-    field that has no control display name.
+
+def _editor_saved(row) -> bool:
+    editor = row.get("editor_config") if isinstance(row, dict) else None
+    if not isinstance(editor, dict):
+        return False
+    if editor.get("helper"):
+        return True
+    if editor.get("unresolved"):
+        return False
+    gaps = editor.get("gaps") or []
+    return not any(
+        isinstance(gap, dict) and gap.get("reason") in {"not_in_structure", "not_in_detail"}
+        for gap in gaps
+    )
+
+
+def _enrich_readable_field_mappings(base_url, project_dir, snapshot) -> bool:
+    """One getNodeDetail call when editor text would otherwise stay empty.
+
+    Structure fetch is unchanged. Create/update rows still resolve
+    「将字段 / 设为」. Query filters, branch conditions, trigger events, and
+    the same class of editor settings are filled from the same response
+    when the structure left them unresolved or as an empty placeholder.
+    A default/else arm that already ends with an empty condition is not
+    fetched again.
     """
     configs = _load_node_configs(project_dir)
     jobs = []
     for pid, structure in (snapshot.get("processes") or {}).items():
+        flow_nodes = _flow_index(structure)
         for node in mcp_workflow_structure.iter_structure_nodes(structure):
-            if not field_mappings.needs_node_detail(node):
+            needs_fields = field_mappings.needs_node_detail(node)
+            needs_editor = node_editor_config.needs_editor_detail(node, flow_nodes)
+            if not needs_fields and not needs_editor:
                 continue
             node_id = str(node.get("nodeId") or node.get("id") or "")
             rows = configs.get(pid) if isinstance(configs.get(pid), list) else []
-            if any(isinstance(row, dict) and row.get("node_id") == node_id and _mapping_resolved(row) for row in rows):
+            saved = next(
+                (row for row in rows if isinstance(row, dict) and row.get("node_id") == node_id),
+                None,
+            )
+            if (
+                saved
+                and (not needs_fields or _mapping_resolved(saved))
+                and (not needs_editor or _editor_saved(saved))
+            ):
                 continue
             if node_id:
-                jobs.append((str(pid), node_id, node, structure))
+                jobs.append((str(pid), node_id, node, structure, flow_nodes))
     if not jobs:
         return False
 
-    print(f"--- Phase 3d: getNodeDetail（解析将字段/设为，{len(jobs)} 个节点） ---")
+    print(f"--- Phase 3d: getNodeDetail（编辑器配置，{len(jobs)} 个节点） ---")
     changed = False
     stop = False
-    for pid, node_id, node, structure in jobs:
+    for pid, node_id, node, structure, flow_nodes in jobs:
         if stop:
             break
         try:
@@ -1544,18 +1609,19 @@ def _enrich_readable_field_mappings(base_url, project_dir, snapshot) -> bool:
                 domain=platform_router.derive_cookie_domain(base_url),
             )
         except Exception as exc:
-            print(f"  [skip] 字段映射 {node_id}: {mcp_workflow_structure.public_error(exc)}")
+            print(f"  [skip] 节点配置 {node_id}: {mcp_workflow_structure.public_error(exc)}")
             if "未登录" in str(exc):
                 stop = True
             continue
         flat = field_mappings.prepare_detail(payload)
-        field_mappings.merge_detail_into(node, flat)
+        node_editor_config.merge_detail_into(node, flat)
         raw_map = structure.get("flowNodeMap") if isinstance(structure, dict) else None
         if isinstance(raw_map, dict) and isinstance(raw_map.get(node_id), dict):
-            field_mappings.merge_detail_into(raw_map[node_id], flat)
+            node_editor_config.merge_detail_into(raw_map[node_id], flat)
         mapping = field_mappings.resolve_field_mappings(node)
-        if not mapping:
-            continue
+        editor = node_editor_config.resolve_editor_config(
+            node, flow_nodes=flow_nodes, detail_seen=True,
+        )
         rows = configs.get(pid)
         if not isinstance(rows, list):
             rows = []
@@ -1564,25 +1630,35 @@ def _enrich_readable_field_mappings(base_url, project_dir, snapshot) -> bool:
         updated = False
         for row in rows:
             if isinstance(row, dict) and row.get("node_id") == node_id:
-                row["field_mappings"] = mapping
-                row["field_detail"] = detail_view
+                if mapping:
+                    row["field_mappings"] = mapping
+                    row["field_detail"] = detail_view
+                if editor:
+                    row["editor_config"] = editor
                 updated = True
         if not updated:
-            rows.append({
+            extra = {
                 "pid": pid,
                 "node_id": node_id,
                 "node_name": node.get("name") or "",
-                "field_mappings": mapping,
-                "field_detail": detail_view,
-            })
+            }
+            if mapping:
+                extra["field_mappings"] = mapping
+                extra["field_detail"] = detail_view
+            if editor:
+                extra["editor_config"] = editor
+            rows.append(extra)
         changed = True
         time.sleep(0.15)
 
     if changed:
-        path = os.path.join(project_dir, "_node_configs.json")
-        with open(path, "w", encoding="utf-8") as handle:
+        with open(os.path.join(project_dir, "_node_configs.json"), "w", encoding="utf-8") as handle:
             json.dump(configs, handle, ensure_ascii=False, indent=2)
-        print("  可读字段映射已写入 _node_configs.json")
+        with open(os.path.join(project_dir, mcp_workflow_structure.SNAPSHOT_NAME), "w", encoding="utf-8") as handle:
+            json.dump(snapshot, handle, ensure_ascii=False, indent=2)
+        with open(os.path.join(project_dir, "nodes.json"), "w", encoding="utf-8") as handle:
+            json.dump(mcp_workflow_structure.nodes_document(snapshot), handle, ensure_ascii=False, indent=2)
+        print("  可读节点配置已写入 _node_configs.json")
     return changed
 
 
@@ -1591,10 +1667,11 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
     """Node config via MCP V3 structure, then legacy flowNode/get for nested flows.
 
     get_workflow_details is not used here. It has no node structure. Chrome
-    getNodeDetail still fills nodes whose config is empty. Create/update nodes
-    that already have fields, but only as raw ids or ``$nodeId-controlId$``
-    tokens, get one more getNodeDetail call so the saved mapping matches the
-    editor's 将字段 / 设为 lines.
+    getNodeDetail fills nodes whose config is empty, and nodes whose editor
+    text would otherwise stay empty or unresolved: query filters, branch
+    conditions, trigger events, and create/update 「将字段 / 设为」 lines.
+    A branch arm that already ends with an empty condition is the default
+    path and is not fetched again.
     """
     if nodes_file:
         return extract_workflow_nodes_from_file(nodes_file, wf_list)
@@ -1656,7 +1733,9 @@ def collect_workflow_nodes(project_dir, wf_list, *, mcp_url, base_url, nodes_fil
     if empty_config and base_url:
         print("--- Phase 3c: Chrome getNodeDetail（仅补空 config） ---")
         extract_node_detail_configs(
-            base_url, node_data, project_dir, merge_existing=bool(snapshot.get("processes")),
+            base_url, node_data, project_dir,
+            merge_existing=bool(snapshot.get("processes")),
+            snapshot=snapshot,
         )
     elif not node_data and not nodes_file:
         print("  [skip] 无 MCP 结构，也没有可用的 Base URL / 节点文件")
@@ -1810,7 +1889,7 @@ def main():
             "worksheet": "",
         })
 
-    # Phase 3: MCP structure first. getNodeDetail fills empty config and unresolved 将字段/设为 mappings.
+    # Phase 3: MCP structure first. getNodeDetail fills empty config and unresolved editor text.
     print("--- Phase 3: 工作流节点 ---")
     node_data = collect_workflow_nodes(
         project_dir,

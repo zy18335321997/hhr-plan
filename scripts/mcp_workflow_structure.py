@@ -18,6 +18,7 @@ import os
 import re
 
 import field_mappings
+import node_editor_config
 
 STRUCTURE_TOOL = "get_workflow_structure"
 NESTED_NODE_TYPES = {"approval_block", "sub_process"}
@@ -538,7 +539,13 @@ def configs_document(snapshot) -> dict:
     document = {}
     for pid, structure in (snapshot.get("processes") or {}).items():
         rows = []
-        for node in iter_structure_nodes(structure):
+        nodes = list(iter_structure_nodes(structure))
+        flow_nodes = {}
+        for node in nodes:
+            node_id = node.get("nodeId") or node.get("id")
+            if node_id:
+                flow_nodes[str(node_id)] = node
+        for node in nodes:
             config = node.get("config") if isinstance(node.get("config"), dict) else {}
             node_type = node.get("nodeType") or node.get("triggerType") or ""
             row = {
@@ -555,6 +562,9 @@ def configs_document(snapshot) -> dict:
             mapping = field_mappings.resolve_field_mappings(node)
             if mapping:
                 row["field_mappings"] = mapping
+            editor = node_editor_config.resolve_editor_config(node, flow_nodes=flow_nodes)
+            if editor:
+                row["editor_config"] = editor
             rows.append(row)
         document[pid] = rows
     return document
