@@ -20,7 +20,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DATA_DIR = Path.home() / "Documents" / "workflow-output"
+from _paths import DATA_ROOT
+
+DATA_DIR = DATA_ROOT
 SKILL_DIR = Path(__file__).resolve().parent
 LOCK_SCHEMA_REF = SKILL_DIR.parent / "references" / "templates" / "execution-lock-schema.md"
 

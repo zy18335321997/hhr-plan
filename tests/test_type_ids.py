@@ -1,11 +1,15 @@
 """The verified TYPE_NAMES map is the only node-type map."""
 
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+import type_names  # noqa: E402
 
 
 def _load(name, filename):
@@ -45,6 +49,7 @@ def _compact(label: str) -> str:
 
 class TypeMapTests(unittest.TestCase):
     def test_generate_node_data_uses_verify_platform_names(self):
+        self.assertIs(verify_platform.TYPE_NAMES, type_names.TYPE_NAMES)
         self.assertEqual(generate_node_data.NODE_TYPE_NAME, verify_platform.TYPE_NAMES)
 
     def test_node_capabilities_matches_type_names(self):

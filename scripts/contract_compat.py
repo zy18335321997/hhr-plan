@@ -12,13 +12,14 @@ truth; an execution contract is a derived, workflow-specific artifact.
 """
 
 import argparse
-import ast
 import json
 import os
 import sys
 from pathlib import Path
 
+from _paths import DATA_ROOT
 from design_ir_validator import validate_design_ir
+from type_names import VALID_ACTION_IDS, VALID_TYPE_IDS
 
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +29,7 @@ SCHEMA_PATH = (
     / "schemas"
     / "execution-lock-validation-schema.json"
 )
-WORKFLOW_OUTPUT = Path(os.path.expanduser("~/Documents/workflow-output"))
+WORKFLOW_OUTPUT = DATA_ROOT
 AGENT_GATE_NAMES = {
     "agent_1_logic",
     "agent_2_platform",
@@ -1157,33 +1158,6 @@ def detect_document_kind(data: dict) -> str | None:
     return None
 
 
-def _extract_platform_constant(name: str) -> object:
-    path = SKILL_DIR / "scripts" / "verify-platform.py"
-    content = path.read_text(encoding="utf-8")
-    tree = ast.parse(content, filename=str(path))
-    for statement in tree.body:
-        if not isinstance(statement, ast.Assign):
-            continue
-        if any(
-            isinstance(target, ast.Name) and target.id == name
-            for target in statement.targets
-        ):
-            return ast.literal_eval(statement.value)
-    return None
-
-
-def extract_valid_type_ids_from_verify_platform() -> set[int]:
-    value = _extract_platform_constant("VALID_TYPE_IDS")
-    return set(value) if isinstance(value, set) else set()
-
-
-def extract_valid_action_ids_from_verify_platform() -> dict[int, set[int]]:
-    value = _extract_platform_constant("VALID_ACTION_IDS")
-    if not isinstance(value, dict):
-        return {}
-    return {int(type_id): set(action_ids) for type_id, action_ids in value.items()}
-
-
 def _load_document(path: str) -> tuple[dict | None, str | None]:
     try:
         with open(path, encoding="utf-8") as file:
@@ -1302,14 +1276,17 @@ def cmd_validate_all(quiet: bool) -> int:
 def cmd_check_schema() -> int:
     workflow_schema = load_schema().get("workflows", {})
     schema_ids = set(workflow_schema.get("valid_type_ids", []))
-    platform_ids = extract_valid_type_ids_from_verify_platform()
+    platform_ids = set(VALID_TYPE_IDS)
     schema_actions = {
         int(type_id): set(action_ids)
         for type_id, action_ids in workflow_schema.get(
             "valid_action_ids", {}
         ).items()
     }
-    platform_actions = extract_valid_action_ids_from_verify_platform()
+    platform_actions = {
+        int(type_id): set(action_ids)
+        for type_id, action_ids in VALID_ACTION_IDS.items()
+    }
     only_schema = sorted(schema_ids - platform_ids)
     only_platform = sorted(platform_ids - schema_ids)
     violations = []

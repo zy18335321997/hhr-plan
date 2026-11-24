@@ -21,7 +21,9 @@ import json, os, sys, subprocess, time
 from collections import defaultdict
 from datetime import datetime
 
-OUTPUT_BASE = os.path.expanduser("~/Documents/workflow-output")
+from _paths import DATA_ROOT
+
+OUTPUT_BASE = str(DATA_ROOT)
 
 TYPE_NAMES = {
     0: '触发器', 1: '分支', 2: '分支条件', 3: '填写节点', 4: '审批节点',

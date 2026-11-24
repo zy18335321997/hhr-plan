@@ -14,7 +14,9 @@ import os
 import sys
 from collections import defaultdict
 
-BASE = os.path.expanduser("~/Documents/workflow-output")
+from _paths import DATA_ROOT
+
+BASE = str(DATA_ROOT)
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 

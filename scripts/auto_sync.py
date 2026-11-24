@@ -19,8 +19,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _paths import DATA_ROOT
+
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE = os.path.expanduser("~/Documents/workflow-output")
+BASE = str(DATA_ROOT)
 REGISTRY = os.path.join(BASE, "projects_registry.json")
 INDEX_DB = os.path.join(BASE, "_search_index.db")
 

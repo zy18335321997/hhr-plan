@@ -23,7 +23,10 @@ import os
 import sys
 from collections import Counter
 
-BASE = os.path.expanduser("~/Documents/workflow-output")
+from _paths import DATA_ROOT
+from type_names import TYPE_NAMES
+
+BASE = str(DATA_ROOT)
 field_map = None  # loaded lazily by generate_from_* functions
 
 TRIGGER_NAME_MAP = {
@@ -45,17 +48,7 @@ TRIGGER_ID_MAP = {
     "4": "编辑记录触发",
 }
 
-def _load_type_names():
-    """TYPE_NAMES in verify-platform.py is the only node-type map."""
-    import importlib.util
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-platform.py")
-    spec = importlib.util.spec_from_file_location("verify_platform_types", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.TYPE_NAMES
-
-
-NODE_TYPE_NAME = _load_type_names()
+NODE_TYPE_NAME = TYPE_NAMES
 
 # Node-level name refinements for typeId=6 (CRUD/ACTION).
 # The internal API uses the node's `name` field for the concrete action.

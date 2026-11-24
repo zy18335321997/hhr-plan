@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "regression"
 sys.path.insert(0, str(SCRIPTS))
 
 import regression_test  # noqa: E402
+import scan_secrets  # noqa: E402
 
 
 class RegressionFixtureTests(unittest.TestCase):
@@ -109,24 +111,14 @@ class HardeningStaticTests(unittest.TestCase):
         )
         self.assertIn("skill_discovery.py", self.preflight)
         self.assertIn("validate --strict", self.preflight)
+        self.assertIn("scripts/scan_secrets.py", self.preflight)
+        self.assertIn("--worktree --staged", self.preflight)
 
     def test_preflight_help_probe_targets_argparse_entrypoints_only(self):
         self.assertIn("ast.parse", self.preflight)
         self.assertIn("has_main_guard", self.preflight)
         self.assertIn("uses_argparse", self.preflight)
         self.assertNotIn('find "$SKILL_DIR/scripts"', self.preflight)
-
-    def test_preflight_scans_multiline_hap_credentials_without_truncation(self):
-        self.assertIn("HAP-Appkey", self.preflight)
-        self.assertIn("HAP-Sign", self.preflight)
-        self.assertIn("re.DOTALL", self.preflight)
-        self.assertIn("github_pat_", self.preflight)
-        self.assertIn("JWT", self.preflight)
-        self.assertIn("re.IGNORECASE", self.preflight)
-        self.assertIn("git\", \"-C\", str(root), \"show\"", self.preflight)
-        self.assertNotIn('"implementation-notes.md",', self.preflight)
-        self.assertNotIn("head -", self.preflight)
-        self.assertNotIn("sed -n", self.preflight)
 
     def test_ci_does_not_swallow_deterministic_failures(self):
         self.assertNotIn("|| true", self.ci)
@@ -166,7 +158,6 @@ class HardeningStaticTests(unittest.TestCase):
             )
             self.assertNotIn("execution_contract.json", document)
             self.assertIn("命令与顺序见 SKILL.md §7", document)
-            self.assertNotIn("scripts/platform-validate.py", document)
             self.assertIn("hap-flow-exec", document)
         self.assertIn("--source-design", mode_b)
 
@@ -174,10 +165,10 @@ class HardeningStaticTests(unittest.TestCase):
         guide = (
             ROOT / "references" / "platform" / "node-capabilities.md"
         ).read_text(encoding="utf-8")
-        verify = (SCRIPTS / "verify-platform.py").read_text(encoding="utf-8")
+        names = (SCRIPTS / "type_names.py").read_text(encoding="utf-8")
         match = re.search(
             r"VALID_TYPE_IDS\s*=\s*\{(.*?)\}",
-            verify,
+            names,
             re.DOTALL,
         )
         self.assertIsNotNone(match)
@@ -222,6 +213,68 @@ class HardeningStaticTests(unittest.TestCase):
 
         self.assertNotEqual(0, completed.returncode)
         self.assertIn("trailing whitespace", completed.stdout)
+
+
+class SecretScanBehaviorTests(unittest.TestCase):
+    def _plant_all_patterns(self, directory: Path) -> None:
+        (directory / "leak.md").write_text(
+            "\n".join(
+                [
+                    "openai " + "sk-" + "A" * 24,
+                    "oauth " + "gho_" + "B" * 24,
+                    "personal " + "ghp_" + "C" * 24,
+                    "fine " + "github_pat_" + "D" * 24,
+                    "jwt eyJ" + "a" * 11 + "." + "b" * 11 + "." + "c" * 11,
+                    "auth Bearer " + "e" * 24,
+                    "HAP-Appkey: " + "f" * 12,
+                    "HAP-Sign: " + "g" * 12,
+                    "home /Users/" + "someone" + "/src",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    def test_worktree_scan_flags_every_pattern(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._plant_all_patterns(root)
+            with mock.patch.object(scan_secrets, "ROOT", root):
+                hits = scan_secrets.scan_worktree()
+
+        self.assertEqual(
+            {
+                "OpenAI key",
+                "GitHub OAuth token",
+                "GitHub personal token",
+                "GitHub fine-grained token",
+                "JWT",
+                "Bearer token",
+                "HAP Appkey/Sign pair",
+                "hardcoded user path",
+            },
+            {label for _, label in hits},
+        )
+
+    def test_user_path_rule_is_scoped_away_from_history_mode(self):
+        relative = "notes.md"
+        text = "home /Users/" + "someone" + "/src"
+
+        self.assertEqual([], scan_secrets.scan_text(relative, text))
+        self.assertEqual(
+            [(relative, "hardcoded user path")],
+            scan_secrets.scan_text(relative, text, check_user_paths=True),
+        )
+
+    def test_staged_scan_reads_index_blob(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            (root / "leak.txt").write_text("sk-" + "A" * 24, encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "leak.txt"], check=True)
+            with mock.patch.object(scan_secrets, "ROOT", root):
+                hits = scan_secrets.scan_staged()
+
+        self.assertEqual([("leak.txt", "OpenAI key")], hits)
 
 
 if __name__ == "__main__":

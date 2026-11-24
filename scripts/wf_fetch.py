@@ -19,12 +19,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
-HAP = Path.home() / ".claude" / "mcp-servers" / "hap-bridge" / "cli.py"
-DATA = Path.home() / "Documents" / "workflow-output"
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 import platform_router  # noqa: E402
+from _paths import DATA_ROOT, HAP_BRIDGE_CLI  # noqa: E402
+
+HAP = HAP_BRIDGE_CLI
+DATA = DATA_ROOT
 
 
 _TRIGGER_MAP = {0: "工作表事件", 1: "自定义动作", 2: "定时触发", 3: "审批流程", 4: "子流程", 5: "封装业务流程"}
@@ -78,7 +80,7 @@ def _extract_trigger(nodes: list[dict]) -> dict:
 
 def _mcp_call(method: str, params: dict) -> dict | None:
     try:
-        r = subprocess.run(["python3", str(HAP), "call", method, json.dumps(params)],
+        r = subprocess.run([sys.executable, str(HAP), "call", method, json.dumps(params)],
                            capture_output=True, text=True, timeout=20)
         if r.returncode == 0 and r.stdout.strip():
             return json.loads(r.stdout)
@@ -430,7 +432,7 @@ def main():
     # ③ legacy hap-bridge CLI（仅无平台绑定时走，example-alpha行为零回归）
     if not binding:
         try:
-            r = subprocess.run(["python3", str(HAP), "wf-nodes", "--raw", pid_or_name],
+            r = subprocess.run([sys.executable, str(HAP), "wf-nodes", "--raw", pid_or_name],
                               capture_output=True, text=True, timeout=30)
             if r.returncode == 0 and r.stdout.strip():
                 raw = json.loads(r.stdout)

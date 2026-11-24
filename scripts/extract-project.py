@@ -45,6 +45,8 @@ import field_mappings
 import mcp_workflow_structure
 import node_editor_config
 import platform_router
+import type_names
+from _paths import DATA_ROOT
 
 # Node roles come from scripts/verify-platform.py TYPE_NAMES.
 # 6 is the data operation, 7 is query, 13 is get-multiple, 4 and 26 are approvals.
@@ -60,16 +62,7 @@ _WRITE_NAME_KEYWORDS = ("新增", "更新", "删除")
 _IGNORED_TARGETS = {"按钮触发", "获取关联记录", "工作表事件触发"}
 
 
-def _load_type_names() -> dict:
-    import importlib.util
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-platform.py")
-    spec = importlib.util.spec_from_file_location("verify_platform_types", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.TYPE_NAMES
-
-
-TYPE_NAMES = _load_type_names()
+TYPE_NAMES = type_names.TYPE_NAMES
 
 
 def iter_flow_nodes(flow_node_map):
@@ -174,7 +167,8 @@ def summarize_flow_nodes(flow_node_map) -> dict:
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-OUTPUT_BASE = os.path.expanduser("~/Documents/workflow-output")
+OUTPUT_BASE = str(DATA_ROOT)
+OUTPUT_BASE_DISPLAY = "~/" + os.path.relpath(OUTPUT_BASE, os.path.expanduser("~"))
 HAP_BRIDGE = os.path.expanduser("~/.claude/mcp-servers/hap-bridge")
 sys.path.insert(0, HAP_BRIDGE)
 
@@ -1388,7 +1382,7 @@ def build_snapshot(project_name: str, ws_map: dict[str, dict],
     lines += [
         "",
         "## 文件索引",
-        f"- 项目目录: `~/Documents/workflow-output/{project_name}/`",
+        f"- 项目目录: `{OUTPUT_BASE_DISPLAY}/{project_name}/`",
         "- `business-flow-manifest.json` — 工作流读写清单",
         "- `project_context.json` — 项目上下文",
         "- `aliases.json` — 术语别名",
@@ -1420,7 +1414,7 @@ def update_registry(project_name: str, ws_count: int, wf_count: int,
         reg = {"projects": {}, "_description": "多项目注册表"}
 
     reg["projects"][project_name] = {
-        "path": f"~/Documents/workflow-output/{project_name}",
+        "path": f"{OUTPUT_BASE_DISPLAY}/{project_name}",
         "context_file": "project_context.json",
         "aliases_file": "aliases.json",
         "worksheets": ws_count,

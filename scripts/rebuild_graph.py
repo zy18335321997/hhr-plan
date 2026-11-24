@@ -15,7 +15,9 @@ Usage:
 import json, os, sys, re
 from collections import defaultdict, Counter
 
-BASE = os.path.expanduser("~/Documents/workflow-output")
+from _paths import DATA_ROOT
+
+BASE = str(DATA_ROOT)
 
 def load_json(path):
     with open(path, encoding="utf-8") as f:

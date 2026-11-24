@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Scan the worktree and git history for credential-shaped strings.
+"""Scan the worktree, staged blobs, and git history for credential-shaped strings.
+
+The hardcoded-user-path rule applies to worktree and staged content only;
+git history is full of legitimate /Users/ references and is scanned for
+credentials alone.
 
 Matches in commits listed in references/known-historical-secret-commits.txt are
 reported and ignored. Those commits still contain the removed HAP credential.
@@ -37,6 +41,7 @@ LINE_PATTERNS = (
         re.compile(r"\bbearer\s+[A-Za-z0-9._~+/-]{20,}", re.IGNORECASE),
     ),
 )
+USER_PATH = re.compile(r"/Users/[a-z][a-z0-9]*/")
 HAP_PAIRS = (
     re.compile(
         r"""HAP-Appkey\s*[:=]\s*["']?([A-Za-z0-9_-]{8,})["']?"""
@@ -62,8 +67,10 @@ def allowlisted_commits():
     return commits
 
 
-def scan_text(relative, text):
+def scan_text(relative, text, check_user_paths=False):
     hits = []
+    if check_user_paths and USER_PATH.search(text):
+        hits.append("hardcoded user path")
     for label, pattern in LINE_PATTERNS:
         if pattern.search(text):
             hits.append(label)
@@ -85,7 +92,36 @@ def scan_worktree():
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        hits.extend(scan_text(relative, text))
+        hits.extend(scan_text(relative, text, check_user_paths=True))
+    return hits
+
+
+def scan_staged():
+    listed = subprocess.run(
+        [
+            "git", "-C", str(ROOT),
+            "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
+    hits = []
+    for raw in listed:
+        if not raw:
+            continue
+        relative = raw.decode("utf-8", errors="surrogateescape")
+        if relative in EXCLUDED or Path(relative).suffix not in SUFFIXES:
+            continue
+        blob = subprocess.run(
+            ["git", "-C", str(ROOT), "show", f":{relative}"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        try:
+            text = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        hits.extend(scan_text(relative, text, check_user_paths=True))
     return hits
 
 
@@ -132,9 +168,10 @@ def scan_history(allowed):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worktree", action="store_true")
+    parser.add_argument("--staged", action="store_true")
     parser.add_argument("--history", action="store_true")
     args = parser.parse_args(argv)
-    if not args.worktree and not args.history:
+    if not args.worktree and not args.staged and not args.history:
         args.worktree = True
         args.history = True
 
@@ -142,6 +179,9 @@ def main(argv=None):
     if args.worktree:
         for relative, label in scan_worktree():
             failures.append(f"worktree {relative}: {label}")
+    if args.staged:
+        for relative, label in scan_staged():
+            failures.append(f"staged {relative}: {label}")
     ignored = 0
     if args.history:
         unexpected, ignored = scan_history(allowlisted_commits())

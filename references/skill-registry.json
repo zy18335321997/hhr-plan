@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-24T06:54:33.000908+00:00",
+  "generated_at": "2026-11-24T07:18:13.283669+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -613,9 +613,10 @@
       ]
     },
     "scan_secrets.py": {
-      "description": "Scan the worktree and git history for credential-shaped strings.",
+      "description": "Scan the worktree, staged blobs, and git history for credential-shaped strings.",
       "arguments": [
         "--worktree",
+        "--staged",
         "--history"
       ]
     },
@@ -625,6 +626,10 @@
     },
     "sheet_workflows.py": {
       "description": "Sheet → Workflows 反向索引查询（含 search.py 交叉校验）",
+      "arguments": []
+    },
+    "type_names.py": {
+      "description": "Single source of truth for node typeId names and sub-action ids.",
       "arguments": []
     },
     "validate-agent-output.py": {

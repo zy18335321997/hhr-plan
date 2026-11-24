@@ -18,11 +18,11 @@ random is 忽略排序规则，随机获取. An empty branch arm with no next st
 the default/else path, not a missing fetch.
 """
 
-import importlib.util
 import json
 import os
 
 import field_mappings
+from type_names import TYPE_NAMES
 
 _HELPER_TYPE_IDS = {100, 101, 1000, 1001}
 _HELPER_ACTION_IDS = {405}
@@ -206,15 +206,6 @@ _ACCOUNT_TYPES = {
 }
 
 
-def _load_type_names() -> dict:
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-platform.py")
-    spec = importlib.util.spec_from_file_location("verify_platform_editor_types", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.TYPE_NAMES
-
-
-TYPE_NAMES = _load_type_names()
 
 
 def _text(value) -> str:

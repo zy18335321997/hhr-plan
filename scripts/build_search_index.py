@@ -7,7 +7,7 @@ Usage:
     python3 scripts/build_search_index.py example-alpha
 
 Input:  project_context.json + business-flow-manifest.json + _node_data.json + aliases.json
-Output: ~/Documents/workflow-output/_search_index.db
+Output: <data root>/_search_index.db (HHR_DATA_ROOT or the default under $HOME)
 """
 
 import json
@@ -17,21 +17,12 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from _paths import DATA_ROOT
+from _tokenizer import tokenize_chinese
 
-BASE_DIR = os.path.expanduser("~/Documents/workflow-output")
+
+BASE_DIR = str(DATA_ROOT)
 DB_PATH = os.path.join(BASE_DIR, "_search_index.db")
-
-
-def tokenize_chinese(text):
-    """Convert Chinese text to space-separated overlapping bigrams + unigrams for FTS5."""
-    if not text:
-        return ""
-    chars = list(text)
-    tokens = []
-    for i in range(len(chars) - 1):
-        tokens.append(chars[i] + chars[i + 1])
-    tokens.extend(chars)
-    return " ".join(tokens)
 
 
 def load_json(path):

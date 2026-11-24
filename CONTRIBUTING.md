@@ -11,9 +11,12 @@
 ## Before Submitting
 
 1. Run the health check: `bash scripts/doctor.sh`
-2. If adding a script, include `--help` and write output in JSON format for agent consumption
-3. If modifying agent instructions, run at least one end-to-end test
-4. Stage only your intended changes
+2. Run both test suites:
+   - `python3 -m unittest discover -s tests -p 'test_*.py'`
+   - `python3 -m unittest discover -s hap-flow-exec/tests -p 'test_*.py'`
+3. If adding a script, include `--help` and write output in JSON format for agent consumption
+4. If modifying agent instructions, run at least one end-to-end test
+5. Stage only your intended changes
 
 ## Code Patterns
 

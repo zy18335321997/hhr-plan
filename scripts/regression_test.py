@@ -23,10 +23,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _paths import DATA_ROOT
+
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 REGRESSION_DIR = SKILL_DIR / "references" / "regression"
-WORKFLOW_OUTPUT = Path.home() / "Documents" / "workflow-output"
+WORKFLOW_OUTPUT = DATA_ROOT
 
 SNAPSHOT_VERSION = "1.0"
 

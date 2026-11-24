@@ -27,11 +27,12 @@ import re
 import sys
 from pathlib import Path
 
+from _paths import DATA_ROOT
 from agent_prepare import compute_lock_digest
 from design_ir_validator import validate_design_ir
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path.home() / "Documents" / "workflow-output"
+DATA_DIR = DATA_ROOT
 
 
 def _load_json(path: Path) -> dict:
