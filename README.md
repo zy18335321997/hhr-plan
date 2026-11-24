@@ -1,4 +1,4 @@
-# hhr-plan 2.1.0
+# hhr-plan
 
 明道云 APaaS 设计、诊断与审计 Skill。它用统一公理约束绿地设计、棕地改造、根因诊断和健康审计，并通过确定性脚本与独立 Agent 阻断不完整方案。
 
@@ -80,16 +80,7 @@ python3 scripts/extract-project.py "<项目名>" \
 
 ## 项目数据命名
 
-项目目录默认位于 `~/Documents/workflow-output/<项目名>/`：
-
-- `project_context.json`：表、字段、关联和命名上下文
-- `business-flow-manifest.json`：工作流读写清单
-- `nodes.json`：原始节点响应。MCP 结构提取时每个流程一张图，含 trigger 与 nodes 的 config
-- `_node_configs.json`：字段级节点详情。MCP 路径保存每个节点的完整 config，以及 `editor_config`（编辑器可读行，旁边保留原始 id 与 token）。创建/更新节点另有 `field_mappings`（「将字段 / 设为」）
-- `_workflow_structures.json`：`get_workflow_structure` 的递归快照和缺口（`gaps`）
-- `_node_data.json`：供搜索和依赖图消费的标准化节点索引
-- `node_configs.json`：旧提取器或单工作流缓存，只通过 `wf_fetch.py` 按 PID 使用
-- `platform.json`：平台路由绑定（origin/app_id），不含凭证
+项目目录默认位于 `~/Documents/workflow-output/<项目名>/`，各数据文件的命名与用途以 `SKILL.md` §4 为唯一真源。
 
 ## 两阶段合约
 
@@ -105,40 +96,10 @@ execution_lock.json（设计阶段唯一机器真源）
 lock_to_contract.py
         │
         ▼
-execution_contract.json（hap-flow-exec 派生输入）
+execution_contracts/<safe-workflow-name>.json（hap-flow-exec 派生输入，一个工作流一个文件）
 ```
 
-基本闭环：
-
-```bash
-python3 scripts/contract_compat.py validate-lock execution_lock.json
-python3 scripts/design_validator.py "<项目名>" \
-  --lock-file execution_lock.json \
-  --context-file project_context.json \
-  --graph-file dependency_graph.json \
-  --check-graph
-python3 scripts/verify-platform.py --lock-file execution_lock.json
-
-# Agent 输出由 agents/verification-orchestrator.md 指导取得
-python3 scripts/validate-agent-output.py \
-  --agent1 /tmp/hhr_agent1_output.json \
-  --agent2 /tmp/hhr_agent2_output.json
-python3 scripts/verification_merge.py \
-  --target execution_lock.json \
-  --agent1 /tmp/hhr_agent1_output.json \
-  --agent2 /tmp/hhr_agent2_output.json \
-  --mode design
-
-python3 scripts/lock_to_contract.py execution_lock.json \
-  --workflow "<精确工作流名称>" \
-  --output "execution_contracts/<safe-workflow-name>.json"
-python3 scripts/contract_compat.py validate-exec \
-  "execution_contracts/<safe-workflow-name>.json"
-```
-
-任一格式、语义、平台机械校验或转换失败都必须阻断。`validate-agent-output.py`
-返回 0 只表示 Agent 输出格式完整，仍需检查 `semantic_verdict`。多工作流必须使用
-不同的安全文件名，禁止覆盖同一个执行合约。
+命令与顺序见 `SKILL.md` §7；门控与语义裁决规则见 `SKILL.md` §5。
 
 用户确认设计前，不得把执行合约交给 `hap-flow-exec`。
 

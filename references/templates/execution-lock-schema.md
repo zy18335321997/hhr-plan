@@ -1,7 +1,7 @@
 # execution_lock.json Schema
 
 > `execution_lock.json` 是设计阶段唯一真源。`design_spec.md` 只供人阅读；
-> `execution_contract.json` 必须由 `lock_to_contract.py` 生成，不得手工维护。
+> `execution_contracts/<safe-workflow-name>.json` 必须由 `lock_to_contract.py` 生成，不得手工维护。
 
 ## 字段命名与兼容边界
 

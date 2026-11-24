@@ -1,4 +1,4 @@
-# hhr-plan 核心方法论 2.1.0
+# hhr-plan 核心方法论
 
 本文件只维护 Agent 的元公理、明道云设计公理、冲突优先级和诚实边界。它不是路由表、工具手册、Mode 流程或详细门控清单。
 
@@ -15,22 +15,13 @@
 | 完整度、正确性、可构建性门控 | `references/unified-design-spec.md` |
 | Agent 调用、格式校验和裁决合并 | `agents/verification-orchestrator.md` |
 | 设计阶段机器真源 | `execution_lock.json` |
-| 执行阶段派生输入 | `execution_contract.json`，由 `scripts/lock_to_contract.py` 生成 |
+| 执行阶段派生输入 | `execution_contracts/<safe-workflow-name>.json`，由 `scripts/lock_to_contract.py` 生成 |
 
 若这些文档冲突，先停止并按上表真源修正文档漂移，不自行选择较方便的版本。
 
 ## 项目数据规范命名
 
-项目目录是 `~/Documents/workflow-output/<项目名>/`，但实际任务必须把 `<项目名>` 替换为用户当前项目，不得硬编码示例项目。
-
-| 文件 | 含义 | 主要消费者 |
-|---|---|---|
-| `project_context.json` | 表、字段、关联、Hub 和命名上下文 | Mode A/B/C/D |
-| `business-flow-manifest.json` | 工作流读写清单 | 搜索、依赖、Mode B/D |
-| `nodes.json` | 浏览器或内部 API 的原始节点响应 | `generate_node_data.py` |
-| `_node_configs.json` | `extract-project.py` 生成的字段级节点详情 | 深度审计与补充验证 |
-| `_node_data.json` | 标准化节点索引；从现有提取物派生 | 搜索索引与依赖图 |
-| `node_configs.json` | 旧提取器或单工作流缓存 | `wf_fetch.py` 按 PID 读取 |
+项目目录是 `~/Documents/workflow-output/<项目名>/`，但实际任务必须把 `<项目名>` 替换为用户当前项目，不得硬编码示例项目。项目数据文件的命名与用途以 `SKILL.md` §4 为唯一真源，本文件不复制清单。
 
 禁止把 `nodes.json`、`_node_data.json`、`_node_configs.json` 和单流 `node_configs.json` 统称为同一个“节点配置文件”。引用时必须写真实文件名和用途。
 

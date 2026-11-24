@@ -157,11 +157,15 @@ class HardeningStaticTests(unittest.TestCase):
         mode_b = (ROOT / "built-in-skills" / "mode-b-brownfield.md").read_text(
             encoding="utf-8"
         )
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("execution_contracts/<safe-workflow-name>.json", skill)
         for document in (mode_a, mode_b):
             self.assertIn(
-                "execution_contracts/${SAFE_WORKFLOW_NAME}.json",
+                "execution_contracts/<safe-workflow-name>.json",
                 document,
             )
+            self.assertNotIn("execution_contract.json", document)
+            self.assertIn("命令与顺序见 SKILL.md §7", document)
             self.assertNotIn("scripts/platform-validate.py", document)
             self.assertIn("hap-flow-exec", document)
         self.assertIn("--source-design", mode_b)

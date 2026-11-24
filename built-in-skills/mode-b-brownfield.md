@@ -15,7 +15,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 3 ──→ Output
 | 0 | 上下文确认 | ⛔ BLOCKING | 涉事表清单 + 命名规范 + 数据链路 |
 | 1 | 影响面分析 | AUTO（>10 流时 ⛔ Hard Stop） | 影响面报告 |
 | 2 | 增量构建 | AUTO | 表和字段变更 + 工作流修改方案 |
-| 3 | 门控 | AUTO（不通过则拦截修正） | Gate 1-6 自检结果 |
+| 3 | 门控 | AUTO（不通过则拦截修正） | 按 `references/unified-design-spec.md` 模式适配表 Mode B 行（Gate 1-6 + BR3,4,5,7）自检结果 |
 | 最终 | 输出 | AUTO（门控通过后） | 增量变更方案 + 影响面报告 |
 
 > **执行纪律**：非 BLOCKING 步自动连续推进，不等待用户。⛔ 标记的步骤必须停等确认后才进入下一步。
@@ -32,6 +32,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 3 ──→ Output
 - `references/theorems-and-protocols.md` — 定理与执行协议
 - `references/unified-design-spec.md` — 三层详细门控唯一真源
 - `references/tool-dispatch.md` — **🚨 强制**：工具调度卡（禁止用 grep/curl 替代）
+- `references/templates/execution-lock-schema.md` — 设计锁和执行合约交接
 - `agents/verification-orchestrator.md` — Agent 调用、输出校验和裁决合并
 - `~/Documents/workflow-output/<项目名>/business-flow-manifest.json` — 已有工作流读/写关系
 - `~/Documents/workflow-output/<项目名>/project_context.json` — 表/字段/关联快照 + Hub表 + 命名规范
@@ -57,7 +58,7 @@ VALIDATOR_RESULT="/tmp/hhr_design_validation.json"
 
 ## Step 0: 上下文确认 ⛔ BLOCKING
 
-🚧 **GATE**：前置文件已加载。用户描述了变更需求。**这是设计中唯一的用户确认门。**
+🚧 **GATE**：前置文件已加载。用户描述了变更需求。**这是设计中的用户确认门。**
 
 > 对标 ppt-master Eight Confirmations：Tier 1 确认锚点 → 从锚点重新派生 Tier 2。
 > 两层确认在同一个 chat 回复中完成，Tier 1 确认后 AI 立即重新推导并呈现 Tier 2。
@@ -239,7 +240,7 @@ python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --reads-from -p "<当前项�
 
 ### 表和字段修改（已有规则）
 
-按增量构建框架的阶段 3-N：
+表和字段修改按以下顺序：
 1. 查已有表能复用吗
 2. 新表单向引用 Hub
 3. 新字段优先加源头表
@@ -361,34 +362,24 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
   --mode design
 ```
 
-校验器退出 0 只表示格式完整，还必须确认 `semantic_verdict=pass`。合并器退出码
-1 或 2 都必须阻断；禁止手工把 lock 中的 gate 改为 pass。
+格式与语义裁决规则见 SKILL.md §5。合并器退出码 1 或 2 都必须阻断；禁止手工把 lock 中的 gate 改为 pass。
 
-### 3.3 Gate 2/3/5/6 人工补充自检
+### 3.3 模式适配表 Mode B 行人工补充自检
 
-不在本文件复制 Gate 内容。按 `references/unified-design-spec.md` 中 Mode B
-适用项逐项确认，并把证据写入设计文档。
+不在本文件复制 Gate 内容。按 `references/unified-design-spec.md` 模式适配表 Mode B 行（Gate 1-6 + BR3,4,5,7）逐项确认，并把证据写入设计文档。
 
 ### ⛔ BLOCKING — 任一 Gate 或 Agent 不通过则拦截修正
 
-全部通过后才允许进入合约转换：
-
-```bash
-SAFE_WORKFLOW_NAME="<仅含字母、数字、下划线和短横线的工作流安全文件名>"
-CONTRACT_FILE="${PROJECT_DIR}/execution_contracts/${SAFE_WORKFLOW_NAME}.json"
-python3 "${SKILL_DIR}/scripts/lock_to_contract.py" "${LOCK_FILE}" \
-  --workflow "<精确工作流名称>" \
-  --output "${CONTRACT_FILE}"
-python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-exec \
-  "${CONTRACT_FILE}"
-```
+全部通过后才允许进入合约转换。命令与顺序见 SKILL.md §7。
 
 转换失败属于 Hard Stop。多工作流 lock 必须逐个精确选择，并写入
 `execution_contracts/<safe-workflow-name>.json`，不得互相覆盖；不得猜工作流、ID、
 配置、依赖或发布顺序。
 
 平台写入验证只在用户确认后交给 `hap-flow-exec`；设计阶段只运行确定性
-contract/preflight，不运行任何发布或保存命令。
+contract/preflight，不运行任何发布或保存命令。确认后的全应用物理搭建交给
+`hap-mcp-app-builder`（见 `references/capability-routing.md`），`hap-flow-exec`
+只负责按执行合约创建工作流。
 
 ### ✅ Checkpoint
 
@@ -398,7 +389,7 @@ contract/preflight，不运行任何发布或保存命令。
 - [x] Agent 1/2 输出格式与语义: pass
 - [x] 三层门控适用项: pass
 - [x] 门控结果已原子写入 execution_lock.json
-- [x] execution_contract.json 已由 lock 派生并验证
+- [x] execution_contracts/<safe-workflow-name>.json 已由 lock 派生并验证
 - [ ] **Next**: 自动进入最终输出
 ```
 
@@ -406,35 +397,28 @@ contract/preflight，不运行任何发布或保存命令。
 
 ## 最终输出
 
-🚧 **GATE**：Step 3 通过，Gate 1-6 全部 pass。
+🚧 **GATE**：Step 3 通过，模式适配表 Mode B 行适用项全部 pass。
 
 ### 输出要求
 
-- **模式**: Mode B
-- **上下文确认结果**: Step 0 的四项输出
-- **影响面报告**: Step 1 的完整依赖分析（含依赖图查询结果）
-- **公理覆盖**: 每个决策追溯到公理编号
-- **门控结果**: Gate 1-6 全部通过（标注在输出末尾）
+输出格式见 `references/templates/output-template.md`。按模板输出，Mode B 必填「影响面」与「两阶段合约交接」两节。
 
 如果修改涉及已有工作流的表，**更新该表的 SOP**。
 
 ### 两阶段合约（强制）
 
-**修改已有项目**: 先加载已有的 `execution_lock.json`，修改后更新并重验：
+**修改已有项目**: 先加载已有的 `execution_lock.json`，修改后更新并重验。如项目未生成过 lock，从 project_context.json 生成骨架：
 
-```
-1. 加载已有 execution_lock.json（如项目未生成过，从 project_context.json 生成骨架:
-   python3 "${SKILL_DIR}/scripts/lock_manager.py" init "<当前项目名>" --mode B \
-   --context-file "${CONTEXT_FILE}" \
-   --source-design "${PROJECT_DIR}/design_spec.md" \
-   --output "${LOCK_FILE}"）
-2. 将本次新增/修改的 sheets/workflows/associations 合并到 lock 文件
-3. 只允许 verification_merge.py 更新 Agent gates
-4. gates 通过后由 lock_to_contract.py 重新生成 execution_contract.json
+```bash
+python3 "${SKILL_DIR}/scripts/lock_manager.py" init "<当前项目名>" --mode B \
+  --context-file "${CONTEXT_FILE}" \
+  --source-design "${PROJECT_DIR}/design_spec.md" \
+  --output "${LOCK_FILE}"
 ```
 
-`execution_lock.json` 是后续修改的唯一机器真源；`execution_contract.json` 是可重建
-派生物，不得手工维护。输出后停等用户确认，确认前不得调用 `hap-flow-exec`。
+将本次新增/修改的 sheets/workflows/associations 合并到 lock 文件；门控与合约转换的命令与顺序见 SKILL.md §7。
+
+`execution_lock.json` 是后续修改的唯一机器真源；`execution_contracts/<safe-workflow-name>.json` 是可重建派生物，不得手工维护。输出后停等用户确认，确认前不得调用 `hap-flow-exec`。确认后的全应用物理搭建交给 `hap-mcp-app-builder`（见 `references/capability-routing.md`）；`hap-flow-exec` 只负责工作流创建。
 
 ### 禁止事项
 
@@ -450,9 +434,9 @@ contract/preflight，不运行任何发布或保存命令。
 - [x] Step 0: 上下文确认（Tier 1 锚点 + Tier 2 派生，用户已确认）
 - [x] Step 1: 影响面分析（依赖分类 + 影响面评估）
 - [x] Step 2: 增量构建（表/字段 + 工作流修改 + 安全检查清单）
-- [x] Step 3: 门控（Gate 1-6 全部通过）
+- [x] Step 3: 门控（模式适配表 Mode B 行适用项全部通过）
 - [x] execution_lock.json 已更新并验证通过
-- [x] execution_contract.json 已严格派生并验证通过
+- [x] execution_contracts/<safe-workflow-name>.json 已严格派生并验证通过
 - [x] 输出: 增量变更方案 + 影响面报告 + 更新 SOP + 两阶段合约
 - [x] 已停等用户确认，尚未执行
 ```

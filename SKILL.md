@@ -8,7 +8,7 @@ references:
   - system-prompt.md
 ---
 
-# hhr-plan 2.3.0
+# hhr-plan
 
 明道云 APaaS 设计、诊断与审计入口，也是 HAP 应用助手、HAP Compute、HAP 前端与 API、hap 命令行的统一交接入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
 
@@ -16,7 +16,7 @@ references:
 
 ### 能力域路由（先于 Mode 选择）
 
-意图属于以下能力域时，直接交接给对应 Skill，由该技能自身的真源与门控继续，不进入 Mode A–D：
+意图属于以下能力域时，直接交接给对应 Skill，由该技能自身的真源与门控继续，不进入 Mode A–D；设计与搭建的组合意图例外，先用 Mode A/B 完成设计并确认，再按本表交接：
 
 | 意图 | 交接目标 | 协议 |
 |---|---|---|
@@ -56,7 +56,7 @@ references:
 
 边界规则：
 
-- 用户只问“值不值得做/有没有必要”，先路由到价值判断能力，不直接进入 Mode A。
+- 用户只问“值不值得做/有没有必要”，先加载 `built-in-skills/requirement-triage.md`（Q1-Q4），不直接进入 Mode A。
 - 诊断确认需要修改时，从 Mode C 显式切换到 Mode B，不在诊断流程内直接写设计。
 - Mode D 发现问题后先交付审计；需要修复时显式切换到 Mode B。
 - 意图或项目身份不清会改变结果时，只问一个最小澄清问题，不静默猜 Mode。
@@ -68,7 +68,9 @@ references:
 
 1. `system-prompt.md`：元公理、设计公理、冲突优先级和诚实边界。
 2. 对应 Mode 指令文件：步骤、阻断点、产出。
-3. `references/tool-dispatch.md`：仅在需要查本地项目数据或调用平台时加载。
+3. `references/tool-dispatch.md`：所有全量 Mode 都加载，工具选择与命令以它为准。
+
+按需加载的内置子技能：`built-in-skills/pattern-select.md`（模式库匹配）、`built-in-skills/plain-language-check.md`（口语检验）、`built-in-skills/requirement-triage.md`（需求筛选 Q1-Q4）。
 
 ### Mode A/B
 
@@ -98,8 +100,7 @@ references:
 | Agent 输出格式与合并 | Schema + `agents/verification-orchestrator.md` |
 | 客户需求到系统设计语言 | `execution_lock.json.design_ir` |
 | 设计阶段机器真源 | `execution_lock.json` |
-| 执行阶段派生输入 | `execution_contract.json`，只能由 `lock_to_contract.py` 生成 |
-| 可发现接口 | `agents/descriptors/*.yaml`；`references/skill-registry.json` 是生成物 |
+| 执行阶段派生输入 | `execution_contracts/<safe-workflow-name>.json`，只能由 `lock_to_contract.py` 生成 |
 
 项目数据统一使用以下名称：
 
@@ -109,6 +110,9 @@ references:
 - `_node_configs.json`：`extract-project.py` 生成的字段级节点详情。
 - `_node_data.json`：由 `generate_node_data.py` 从现有提取物生成的标准化节点索引，供搜索和依赖图消费。
 - `node_configs.json`：旧提取器或单工作流缓存格式；只通过 `wf_fetch.py` 按 PID 读取，不把它与上述全项目文件混称。
+- `aliases.json`：客户用语与系统名称的映射。
+- `project-snapshot.md`：项目全景快照，Mode D 先加载。
+- `dependency_graph.json`：工作表依赖图（读写边与结构关联边），供影响面和环检测消费。
 - `platform.json`：平台路由绑定（origin + app_id），不含任何凭证。
 
 ## 5. Outcome Contract
@@ -155,9 +159,9 @@ Mode A/B 的固定交接顺序：
 5. gates 通过后运行 `lock_to_contract.py`，从 lock 逐个派生
    `execution_contracts/<safe-workflow-name>.json`。
 6. 运行 `contract_compat.py validate-exec`。转换器缺少任何精确 ID、配置、依赖或发布顺序时 Hard Stop，不得猜值。
-7. 向用户展示设计与门控结果并停等确认。只有用户确认后，才把已校验的执行合约交给 `hap-flow-exec`。
+7. 向用户展示设计与门控结果并停等确认。只有用户确认后，才把已校验的执行合约交给 `hap-flow-exec`；确认后的全应用物理搭建交给 `hap-mcp-app-builder`（见 `references/capability-routing.md`），`hap-flow-exec` 只负责按执行合约创建工作流。
 
-`design_spec.md` 是人类可读说明，不能覆盖 lock；`execution_contract.json` 是可重新生成的执行输入，不能手改。
+`design_spec.md` 是人类可读说明，不能覆盖 lock；`execution_contracts/<safe-workflow-name>.json` 是可重新生成的执行输入，不能手改。
 
 ## 8. 安全边界
 

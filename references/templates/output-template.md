@@ -416,11 +416,11 @@ execution contract 校验: [pass/fail]
 任何一步失败时：
 
 - 保留 `execution_lock.json` 中的失败 Agent gates 和 `verification.fix_plan`。
-- 不生成、手改或交付一个“看起来可执行”的 `execution_contract.json`。
+- 不生成、手改或交付一个“看起来可执行”的 `execution_contracts/<safe-workflow-name>.json`。
 - 不进入 `hap-flow-exec`。
 
 全部通过后仍须停等用户确认。用户确认后，才把已校验的
-`execution_contract.json` 交给 `hap-flow-exec`；不得把 lock 直接当执行输入。
+`execution_contracts/<safe-workflow-name>.json` 交给 `hap-flow-exec`；不得把 lock 直接当执行输入。
 
 ## Mode D 交接
 

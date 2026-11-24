@@ -28,6 +28,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 2.5 ──→ Step 3 ─
 ## 前置加载
 
 - `system-prompt.md` — 元公理 A（推理短路）+ 公理5（优雅降级）
+- `references/theorems-and-protocols.md` — 定理与执行协议
 - `references/tool-dispatch.md` — **🚨 强制**：工具调度卡（禁止用 grep/curl 替代）
 - `~/Documents/workflow-output/{项目名}/aliases.json` — 术语映射
 - `~/Documents/workflow-output/{项目名}/project_context.json` — 工作流元数据
@@ -51,7 +52,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 2.5 ──→ Step 3 ─
 □ PID 搜索返回多个匹配 → 列出全部（名称+PID+触发表+节点数），让用户选
 ```
 
-> PID 确认协议详见 `system-prompt.md` §PID 确认协议。未确认 → 不进入 Step 1。
+> PID 确认见 `system-prompt.md`「行为陷阱·诊断」。未确认 → 不进入 Step 1。
 
 ### ✅ Checkpoint
 
@@ -94,8 +95,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 2.5 ──→ Step 3 ─
 1. 查 `aliases.json` → 确定涉事工作表名
 2. 查 `business-flow-manifest.json` → 找到该表所有工作流及读写关系
 3. 根据症状匹配最可能的工作流（按钮触发 vs 事件触发 vs 定时触发）
-4. 如读写链路不够详细 → 加载完整 `node_configs.json`：
-   `~/Documents/workflow-output/{项目名}/{模块}/{工作表}/工作流/{工作流名}/node_configs.json`
+4. 如读写链路不够详细 → 运行 `python3 ~/.claude/skills/hhr-plan/scripts/wf_fetch.py "{项目名}" "<PID>"` 读取该工作流的 `node_configs.json`
 5. **运行时降级**: 如 manifest/node_configs 不可用，走 `references/runtime-probe.md` §Mode C 降级诊断流
 
 ### ✅ Checkpoint
@@ -152,13 +152,7 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 
 **在输出任何诊断结论前，必须检查涉事工作流实例的执行状态。** 这是复盘发现的最关键遗漏步骤。
 
-1. 对涉事记录调用审批状态和操作日志：
-   ```bash
-   # 查审批链状态（MCP，始终可用）
-   python3 ~/.claude/mcp-servers/hap-bridge/cli.py call get_approval_list_by_row '{"worksheet_id":"<wsid>","row_id":"<rowid>"}'
-   # 查工作流触发日志（MCP，始终可用）
-   python3 ~/.claude/mcp-servers/hap-bridge/cli.py call get_record_logs '{"worksheet_id":"<wsid>","row_id":"<rowid>"}'
-   ```
+1. 对涉事记录调用审批状态和操作日志（命令见 `references/tool-dispatch.md`「线上实时数据」）：
    - 如果工作流待办中有未完成的审批节点 → **阻塞就是根因**
    - 如果工作流状态为"已关闭" → **启用状态是最直接的根因**
 2. 检查工作流定义中的 `typeId=26 (CreateEvent)` 节点：
@@ -219,11 +213,11 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 
 ```bash
 # 涉事表的入向/出向依赖
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --writes-to -p example-alpha
-python3 ~/.claude/skills/hhr-plan/scripts/search.py "表名" --reads-from -p example-alpha
+python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --writes-to -p "<项目名>"
+python3 ~/.claude/skills/hhr-plan/scripts/search.py "<表名>" --reads-from -p "<项目名>"
 
 # 涉事实体的生命周期
-python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py example-alpha --lifecycle 表名
+python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py "<项目名>" --lifecycle "<表名>"
 ```
 
 列出受影响的其他工作流（截断到 10 条）。标注每条依赖的类型（读/写/子流程/审批链）。
@@ -259,7 +253,9 @@ python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py example-alpha --lifec
 
 ### 输出格式
 
-**输出前完成 4 项 Gate 自检（来自 SKILL.md 门控协议），不通过不输出。**
+输出格式见 `references/templates/output-template.md`。
+
+**输出前完成 4 项检查（A-D），不通过不输出。**
 
 ```
 根因: [一句话，带概率估计]
@@ -268,14 +264,14 @@ python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py example-alpha --lifec
   修复方案: [最小改动]
   影响面: [受影响的其他流/表，附依赖图查询结果]
 
-Gate 1 依赖图: □已查  Gate 2 逻辑: □已过  Gate 3 时序: □n/a  Gate 4 字段存在性: □已过
+检查项 A 依赖图: □已查  检查项 B 逻辑: □已过  检查项 C 时序: □n/a  检查项 D 字段存在性: □已过
 ```
 
 ### 输出前硬门控
 
-**输出前必须逐 Gate 自检。** 任一不通过 → 拦截，修正后再输出。
+**输出前必须逐项自检。** 任一不通过 → 拦截，修正后再输出。
 
-**Gate 1: "去哪里查"类问题必须包含用户导航路径**
+**检查项 A: "去哪里查"类问题必须包含用户导航路径**
 
 触发条件: Step 1 判定为"去哪里查"类问题
 
@@ -286,10 +282,10 @@ Gate 1 依赖图: □已查  Gate 2 逻辑: □已过  Gate 3 时序: □n/a  Ga
 □ 回答了"用什么条件筛选"？
 
 未通过 → 缺哪条补哪条，不输出
-通过 → 继续 Gate 2
+通过 → 继续检查项 B
 ```
 
-**Gate 2: 关键结论必须有线上验证，不能只推断**
+**检查项 B: 关键结论必须有线上验证，不能只推断**
 
 触发条件: 诊断结论依赖"应该生成了数据"这类推断
 
@@ -305,10 +301,10 @@ Gate 1 依赖图: □已查  Gate 2 逻辑: □已过  Gate 3 时序: □n/a  Ga
   - 如果待办中有未完成审批 → 这就是根因，不必往下追子流程
 
 未通过 → 补充验证步骤或标注未确认，不输出
-通过 → 继续 Gate 3
+通过 → 继续检查项 C
 ```
 
-**Gate 3: 根因必须列出排除的假说**
+**检查项 C: 根因必须列出排除的假说**
 
 ```
 □ 除主假说外，至少列出 1 个已排除的备选假说 + 排除理由
@@ -317,10 +313,10 @@ Gate 1 依赖图: □已查  Gate 2 逻辑: □已过  Gate 3 时序: □n/a  Ga
 □ 主假说 + 备选假说均来自 Step 3 根因表，非凭空推测
 
 未通过 → 补充排除假说，不输出
-通过 → 继续 Gate 4
+通过 → 继续检查项 D
 ```
 
-**Gate 4: 诊断结论必须可追溯**
+**检查项 D: 诊断结论必须可追溯**
 
 ```
 □ 根因标注了概率？
@@ -343,5 +339,5 @@ Gate 1 依赖图: □已查  Gate 2 逻辑: □已过  Gate 3 时序: □n/a  Ga
 - [x] Step 3: 根因分析（概率排序 + 排除假说）
 - [x] Step 4: 影响面评估（依赖图查询）
 - [x] Step 5: 收拢协议（如触发）
-- [x] Gate 1-4: 全部通过
+- [x] 检查项 A-D: 全部通过
 ```

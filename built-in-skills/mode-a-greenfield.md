@@ -6,7 +6,7 @@
 
 ```
 Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ──→ Step 4 ──→ Step 5 ──→ Step 6 ──→ Step 7 ──→ Output
- 平台边界+筛选  五问推导  Confirm    建表      建工作流    字段配置    视图设计    模式库匹配   门控      设计文档+SOP
+ 平台边界+筛选  五问推导  Confirm    建表      建工作流    字段配置    视图设计  需求追踪与完整度复核  门控      设计文档+SOP
 ⛔不可行时停           ⛔用户确认                              ⛔Agent双不通过时停
 ```
 
@@ -19,7 +19,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 | 3 | 建工作流 | AUTO | 工作流节点链路 |
 | 4 | 字段配置 | AUTO | 逐字段详细配置 |
 | 5 | 视图设计 | AUTO | 按角色视图方案 |
-| 6 | 模式库匹配 | AUTO | 模式匹配报告 |
+| 6 | 需求追踪与完整度复核 | AUTO | 需求追踪复核结果 |
 | 7 | 门控 | ⛔ BLOCKING（Agent 不通过时） | 校验结果 |
 | 最终 | 输出 | AUTO（门控通过后） | 设计文档 + SOP + execution_lock |
 
@@ -219,7 +219,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 
 🚧 **GATE**：Design Confirmations 完成，核心实体和关联方向已锁定。
 
-按增量构建框架的四个阶段执行：
+按以下四个阶段执行：
 - 阶段0: 识别核心实体 → Hub候选
 - 阶段1: 核心Hub表（覆盖已确认需求与七维字段）
 - 阶段2: 第一个业务流程（端到端完整闭环，含退回和异常）
@@ -413,28 +413,17 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
   --mode design
 ```
 
-`validate-agent-output.py` 返回 0 只表示格式完整；必须同时检查输出中的
-`semantic_verdict`。`verification_merge.py` 退出码 1 或 2 都是阻断，不得继续生成执行合约。
+格式与语义裁决规则见 SKILL.md §5。`verification_merge.py` 退出码 1 或 2 都是阻断，不得继续生成执行合约。
 
 ### 7.2 lock → execution contract
 
-只有确定性 contract/preflight 与 Agent 语义裁决都通过后，才派生执行合约：
-
-```bash
-SAFE_WORKFLOW_NAME="<仅含字母、数字、下划线和短横线的工作流安全文件名>"
-CONTRACT_FILE="${PROJECT_DIR}/execution_contracts/${SAFE_WORKFLOW_NAME}.json"
-python3 "${SKILL_DIR}/scripts/lock_to_contract.py" "${LOCK_FILE}" \
-  --workflow "<精确工作流名称>" \
-  --output "${CONTRACT_FILE}"
-python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-exec \
-  "${CONTRACT_FILE}"
-```
+只有确定性 contract/preflight 与 Agent 语义裁决都通过后，才派生执行合约。命令与顺序见 SKILL.md §7。
 
 多工作流 lock 必须逐个使用精确名称和不同的安全文件名转换，统一写入
-`execution_contracts/`，不得覆盖。任何缺失 ID、alias、配置、依赖或发布顺序的转换
+`execution_contracts/<safe-workflow-name>.json`，不得覆盖。任何缺失 ID、alias、配置、依赖或发布顺序的转换
 失败都必须阻断，禁止猜值或手工编辑执行合约。
 
-平台写入验证不属于设计门控。用户确认执行后，由 `hap-flow-exec` 负责真实平台写入与
+平台写入验证不属于设计门控。用户确认执行后，由 `hap-flow-exec` 按执行合约创建工作流并
 验证；设计阶段不得用发布动作冒充只读校验。
 
 ### ✅ Checkpoint
@@ -444,7 +433,7 @@ python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-exec \
 - [x] lock / 项目字段依赖 / 平台机械检查: pass
 - [x] Agent 1/2 输出格式: pass
 - [x] Agent 1/2 语义裁决: pass，gates 已原子写入 execution_lock.json
-- [x] execution_contract.json 已由 lock 派生并通过结构校验
+- [x] execution_contracts/<safe-workflow-name>.json 已由 lock 派生并通过结构校验
 - [ ] **Next**: 自动进入最终输出
 ```
 
@@ -454,14 +443,11 @@ python3 "${SKILL_DIR}/scripts/contract_compat.py" validate-exec \
 
 🚧 **GATE**：Step 7 全部通过，且执行合约由 lock 成功派生。
 
+输出格式见 `references/templates/output-template.md`。
+
 ### 设计文档 (Markdown)
 
-每个输出必须声明：
-
-- **模式**: Mode A
-- **公理覆盖**: 每个决策追溯到公理编号
-- **外推置信度**: HIGH (有数据支撑) / MEDIUM (公理推导) / LOW (公理间张力)
-- **门控结果**: 确定性 contract/preflight、Agent 1/2 格式与语义
+按模板输出设计文档，覆盖模式、公理覆盖、置信度与门控结果。
 
 ### SOP 操作卡片 (HTML + Markdown)
 
@@ -475,17 +461,12 @@ HTML 版调用 **baoyu-design** 渲染交互式操作指南。Markdown 版用于
 
 ### 两阶段合约（强制）
 
-Schema 和闭环命令参考 `references/templates/execution-lock-schema.md`。
-
-```
-1. 设计阶段只编辑 execution_lock.json。
-2. verification_merge.py 是 Agent gates 的唯一写入入口。
-3. gates 通过后，由 lock_to_contract.py 生成 execution_contract.json。
-4. design_spec.md 供人阅读；execution_contract.json 供 hap-flow-exec 使用，两者都不能覆盖 lock。
-```
+Schema 见 `references/templates/execution-lock-schema.md`。命令与顺序见 SKILL.md §7。
 
 输出后必须停等用户确认。用户确认前不得调用 `hap-flow-exec`；确认后只交付已校验的
-`execution_contract.json`，不得把 `execution_lock.json` 直接当执行输入。
+`execution_contracts/<safe-workflow-name>.json`，不得把 `execution_lock.json` 直接当执行输入。
+确认后的全应用物理搭建交给 `hap-mcp-app-builder`（见 `references/capability-routing.md`）；
+`hap-flow-exec` 只负责工作流创建。
 
 ### ✅ Pipeline Complete
 
@@ -498,10 +479,10 @@ Schema 和闭环命令参考 `references/templates/execution-lock-schema.md`。
 - [x] Step 3: 建工作流（六步推导法 + 时序标注）
 - [x] Step 4: 字段配置（逐字段模板）
 - [x] Step 5: 视图设计（按角色）
-- [x] Step 6: 模式库匹配
+- [x] Step 6: 需求追踪与完整度复核
 - [x] Step 7: 门控（Agent 1 + Agent 2 双通过）
 - [x] execution_lock.json 已生成并验证通过
-- [x] execution_contract.json 已严格派生并验证通过
-- [x] 输出: 设计文档 + SOP + execution_lock.json + execution_contract.json
+- [x] execution_contracts/<safe-workflow-name>.json 已严格派生并验证通过
+- [x] 输出: 设计文档 + SOP + execution_lock.json + execution_contracts/<safe-workflow-name>.json
 - [x] 已停等用户确认，尚未执行
 ```

@@ -86,75 +86,14 @@ manifest/context 不可用或不完整 → 停止，加载 `references/runtime-p
 
 🚧 **GATE**：Step 1 完成，数据源就绪。
 
-### 公理1 数据血缘检查
-
-```
-□ 所有新增节点是否回写父引用 (MUST)
-□ 主子表创建顺序是否正确 (MUST)
-□ 流程参数命名是否携带语义 (MUST)
-□ 跨表查询是否使用精确查找 (MUST)
-□ 获取方式是否用"直接获取"而非"动态获取" (MUST)
-□ 是否存在孤儿记录——创建时不回写来源的数据行 (MUST NOT)
-```
-
-### 公理2 人在回路检查
-
-```
-□ 审批类流程是否使用按钮触发而非定时/事件触发 (MUST)
-□ 审批是否配置了限时处理和邮件通知 (MUST)
-□ 审批人为空时是否由流程拥有者代理 (MUST)
-□ 是否存在定时触发替代人工决策 (MUST NOT)
-□ 是否存在发起人自动通过自己审批 (MUST NOT)
-```
-
-### 公理3 自文档化检查
-
-```
-□ 自动编号是否拼音前缀+日期+流水号 (MUST)
-□ 父子表命名是否括号标注关系 (MUST)
-□ 单选颜色是否冷→暖语义梯度 (MUST)
-□ 字段命名是否符合规范（布尔→是否XX, 名称→可搜索） (MUST)
-□ 工作流命名是否动词+名词 (MUST)
-□ 通知消息是否内联引用字段值 (MUST)
-□ 字段排列是否符合规范（身份→业务→关联→汇总） (MUST)
-```
-
-### 公理4 单向依赖检查
-
-```
-□ 是否存在双向关联 (MUST NOT — Critical)
-□ 是否存在DAG环路 (MUST NOT — Critical)
-□ Hub表是否被相关表单向引用 (MUST)
-□ 他表字段是否仅用于只读场景 (MUST)
-```
-
-### 公理5 优雅降级检查
-
-```
-□ 查询/获取节点是否配置"未获取到时继续执行" (MUST)
-□ 子流程是否逐条执行+中止时继续下一条 (MUST)
-□ 状态/日期/拥有者字段是否设默认值 (MUST)
-□ 是否存在"未获取到数据时中止流程" (MUST NOT — Critical)
-```
-
-### 跨公理检查
-
-```
-□ 可复用逻辑是否封装为模板（公理1+公理3）
-□ 是否有"可能用到"的预留字段（违反增量构建硬纪律4）
-□ 新模块是否单向引用Hub（公理4+增量框架）
-```
+按 `references/unified-design-spec.md` 模式适配表 Mode D 行确定扫描维度，再按 `system-prompt.md` 五公理 MUST/MUST NOT 逐项扫描。不在本文件复制检查项。
 
 ### ✅ Checkpoint
 
 ```markdown
 ## ✅ Step 2 完成
-- [x] 公理1 数据血缘: 已扫描
-- [x] 公理2 人在回路: 已扫描
-- [x] 公理3 自文档化: 已扫描
-- [x] 公理4 单向依赖: 已扫描
-- [x] 公理5 优雅降级: 已扫描
-- [x] 跨公理检查: 已扫描
+- [x] 模式适配表 Mode D 行适用项: 已扫描
+- [x] 五公理 MUST/MUST NOT: 已逐项扫描
 - [ ] **Next**: 自动进入 Step 3
 ```
 
@@ -182,8 +121,7 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
   --mode audit
 ```
 
-`validate-agent-output.py` 返回 0 只代表格式完整，仍必须确认 `semantic_verdict=pass`。
-合并器退出码 1 表示语义失败，退出码 2 表示格式或输入失败；两者都必须阻断最终输出。
+格式与语义裁决规则见 SKILL.md §5。合并器退出码 1 表示语义失败，退出码 2 表示格式或输入失败；两者都必须阻断最终输出。
 
 ### ⛔ BLOCKING
 
@@ -207,6 +145,8 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
 ## 最终输出
 
 🚧 **GATE**：Step 3 通过，扫描完整性已确认。
+
+输出格式见 `references/templates/output-template.md`。
 
 ### 审计评分卡
 
@@ -238,37 +178,38 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
 
 ### 默认输出物（三项）
 
-审计完成后，输出以下三项（均保存到 `reports/<项目名>/`）：
+审计完成后，输出以下三项，均保存到 `${REPORT_DIR}`（项目目录下的 `reports/`）：
 
 **1. 审计报告 (Markdown)**
-评分卡 + 问题清单（按严重度排序）+ 修复优先级。
+
+`${REPORT_DIR}/audit-report.md`：评分卡 + 问题清单（按严重度排序）+ 修复优先级。
 
 **2. DAG 拓扑图 (HTML)**
-从 `project_context.json` 提取 relation_graph → 调用 **baoyu-design** 生成交互式 DAG 图：
+
+从 `project_context.json` 提取 relation_graph → 调用外部 Skill **baoyu-design** 生成交互式 DAG 图，输出到 `${REPORT_DIR}/topology-dag.html`：
 - 表→表单向引用，按模块着色
 - Hub 表放大加粗边框
 - 支持缩放/拖拽/点击高亮
-- 输出到 `designs/<项目名>-topology/topology-dag.html`
 
 **3. SOP 操作卡片 (HTML)**
-逐表提取字段 + 工作流 + 按钮触发 → 调用 **baoyu-design** 生成交互式操作指南：
+
+逐表提取字段 + 工作流 + 按钮触发 → 调用 **baoyu-design** 生成交互式操作指南，输出到 `${REPORT_DIR}/sop/<工作表名>.html`：
 - 流程总览（四步流转图）
 - 步骤详情（可展开，逐字段说明）
 - 操作按钮面板（阶段×按钮×工作流触发）
 - 工作流节点链路可视化
 - 常见问题 FAQ
-- 输出到 `designs/<项目名>-sop/<工作表名>.html`
 
-SOP 同步生成 **Markdown 版**（`reports/<项目名>/sop/<工作表名>.md`），使用 `references/templates/sop-markdown.md` 模板。Markdown 版供打印、git 版本追踪和全文搜索。
+SOP 同步生成 **Markdown 版** `${REPORT_DIR}/sop/<工作表名>.md`，使用 `references/templates/sop-markdown.md` 模板。Markdown 版供打印、git 版本追踪和全文搜索。baoyu-design 不可用或调用失败时，以 Markdown 版为准并注明未生成 HTML，不阻断审计。
 
 ### 修复与执行交接
 
-Mode D 只产出审计，不直接生成或执行 `execution_contract.json`。用户批准修复后：
+Mode D 只产出审计，不直接生成或执行 `execution_contracts/<safe-workflow-name>.json`。用户批准修复后：
 
 1. 显式切换到 Mode B。
 2. 由 Mode B 更新 `execution_lock.json` 并完成 Agent 1/2 门控。
 3. 仅在 gates 通过后运行 `lock_to_contract.py` 派生并校验
-   `execution_contract.json`。
+   `execution_contracts/<safe-workflow-name>.json`。
 4. 再次停等用户确认后，才可交给 `hap-flow-exec`。
 
 禁止从审计报告直接拼装执行合约。
@@ -278,7 +219,7 @@ Mode D 只产出审计，不直接生成或执行 `execution_contract.json`。�
 ```markdown
 ## ✅ Mode D 健康审计完成
 - [x] Step 1: 扫描准备（项目快照 + 数据完整性）
-- [x] Step 2: 五维度扫描（公理1-5 + 跨公理检查）
+- [x] Step 2: 五维度扫描（模式适配表 Mode D 行 + 五公理 MUST/MUST NOT）
 - [x] Step 3: 门控验证（Agent 3 扫描完整性）
 - [x] 输出: 审计报告 + 评分卡 + 问题清单 + DAG 图 + SOP
 - [x] 如需修复，已路由 Mode B；本次审计未直接执行
