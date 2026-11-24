@@ -242,3 +242,19 @@
   `_normalize_workflows` 增加嵌套 `processList` 拍平 + 去重后 list_count=356 与
   平台实际工作流数一致。实机链路（probe 10 节点 / wf_fetch --url /
   绑定复用 / rebuild-names 356 名称）全部通过。
+
+### Wave 3 决策记录（2026-11-24，用户委托代决）
+
+- Checkpoint 一词双义：4 个 mode 文件的"✅ Checkpoint"复选框标题改为"完成标记"，
+  与 §6 YAML 存档术语分离（commit c042e51）。
+- patterns/ 子树：接线保留，不删除。pattern-select.md Step 2 检索根扩展为
+  modules/（结构模式）+ 4 个领域目录（业务场景 → _index.md 自动选择表）；
+  SKILL.md §3 Mode A/B 加载清单增加模式库总索引一行；README 目录树补齐
+  实际 24 个领域文件（commit 740b3af）。
+- topology 去标识：改虚构名。topology-霞为数字化.md → topology-示例制造企业.md，
+  标题/页脚同步替换并加"客户名称已去标识"头注；topology-合同管理.md 本就通用，
+  未动。⚠ git 历史仍含原客户名，彻底清除需历史重写，未执行（commit fd96979）。
+- hap-flow-exec 根收敛：核查确认已收敛，无需再改。唯一根 = 仓库内
+  hap-flow-exec/（git 跟踪 19 文件）；Claude/Codex/通用 Agents 三入口为软链、
+  Grok 为薄 bridge，均指向该根；文件级硬链接 0 残留；backup-20260721-2230
+  已删除且全仓无引用；55/55 测试通过。
