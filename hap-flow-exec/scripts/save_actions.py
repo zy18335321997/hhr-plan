@@ -7,7 +7,7 @@ Reads a contract JSON and a batch-add alias→nodeId mapping, then:
   - Saves get_single / get_multiple filter configs (filters format, bug #036489)
 
 Usage:
-  python3 save_actions.py --contract execution_contract.json \\
+  python3 save_actions.py --contract execution_contracts/<safe-workflow-name>.json \\
       --batch-output '<batch-add JSON>'
 """
 

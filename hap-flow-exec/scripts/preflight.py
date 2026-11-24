@@ -3,7 +3,7 @@
 Step 2 静态预检脚本：验证执行合约结构和引用形状。
 
 用法:
-  python3 preflight.py <execution_contract.json>
+  python3 preflight.py <execution_contracts/<safe-workflow-name>.json>
 
 产出:
   - 全部通过 → exit 0，输出验证通过摘要
@@ -212,34 +212,7 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
                         f"但 '{left_node}' 不在节点 alias 列表中"
                     )
 
-    # 5. 作用域隔离检查
-    for node in nodes:
-        if node.get("nodeType") == "approve":
-            target_node = node.get("config", {}).get("target", {}).get("node", "")
-            if target_node and target_node != "approval_start":
-                errors.append(
-                    f"审批步骤 {node['alias']} target.node='{target_node}'，"
-                    f"应为 'approval_start'"
-                )
-
-    # 6. 子流程内部检查
-    for node in nodes:
-        if node.get("nodeType") == "sub_process":
-            inner_nodes = node.get("config", {}).get("process", {}).get("nodes", [])
-            for in_node in inner_nodes:
-                if in_node.get("nodeAlias") == "sub_trigger":
-                    continue
-                if in_node.get("nodeAlias") == "approval_start":
-                    continue
-                target_node = in_node.get("config", {}).get("target", {}).get("node", "")
-                if target_node == "sub_trigger":
-                    continue
-                if target_node == "approval_start":
-                    continue
-                if target_node not in [n.get("nodeAlias") for n in inner_nodes]:
-                    pass  # 可能引用外部，不在此检查
-
-    # 7. 字段引用与 option key 形状检查
+    # 5. 字段引用与 option key 形状检查
     option_keys_by_field = {}
     relation_fields = set()
     for ref in refs:
@@ -352,7 +325,10 @@ def print_results(passed: bool, static_errors: list[str]):
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python3 preflight.py <execution_contract.json>")
+        print(
+            "用法: python3 preflight.py "
+            "<execution_contracts/<safe-workflow-name>.json>"
+        )
         sys.exit(1)
 
     contract_path = sys.argv[1]

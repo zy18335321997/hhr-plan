@@ -300,7 +300,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="execution_contract → HAP batch-add --nodes JSON"
     )
-    parser.add_argument("contract", help="execution_contract.json")
+    parser.add_argument(
+        "contract", help="execution_contracts/<safe-workflow-name>.json"
+    )
     parser.add_argument(
         "--trigger-node-id",
         help="工作流骨架创建后返回的物理触发节点 ID",

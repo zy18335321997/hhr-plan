@@ -1,13 +1,13 @@
 # Agent 执行编排协议
 
 > Agent 负责观察、分类和路由；脚本负责确定性验证、写入与状态持久化。
-> Agent 不得直接修改 `execution_contract.json`。
+> Agent 不得直接修改 `execution_contracts/<safe-workflow-name>.json`。
 
 ## 初始化
 
 ```bash
 python3 scripts/execution_state.py init \
-  --contract execution_contract.json \
+  --contract execution_contracts/<safe-workflow-name>.json \
   --state execution_state.json
 ```
 
@@ -33,19 +33,22 @@ python3 scripts/execution_state.py init \
 | `await_user` | 已有部分写入；列出补偿/保留方案，等待用户确认 |
 | `hard_stop` | 停止，报告重复失败证据 |
 
-## 步骤命令
+## 步骤与状态映射
 
-```text
-static_preflight  → preflight.py
-live_preflight    → live_preflight.py
-create_skeleton   → hap workflow create / create-custom-action
-batch_add         → contract_to_batch_dsl.py → hap workflow node batch-add
-save_actions      → save_actions.py
-structure_verify  → hap workflow structure + deterministic diff
-publish_inner     → 按 execution_state.inner_pids 发布
-publish_main      → 发布 execution_state.pid
-complete          → 最终只读结构复核
-```
+`scripts/execution_state.py` 的 `STEPS`（static_preflight … complete）是状态机真源；
+本文档的 Step 0/Step 1 不占状态步，状态机从 Step 2 开始。
+
+| 文档 Step | execution_state 步骤 | 确定性命令 |
+|---|---|---|
+| Step 2 静态预检 | `static_preflight` | `preflight.py` |
+| Step 2 平台只读预检 | `live_preflight` | `live_preflight.py` |
+| Step 3 骨架 + 触发器 | `create_skeleton` | `hap workflow create` / `create-custom-action` |
+| Step 4 批量节点 | `batch_add` | `contract_to_batch_dsl.py` → `hap workflow node batch-add` |
+| Step 4.5 action 字段 | `save_actions` | `save_actions.py` |
+| Step 5 结构验证 | `structure_verify` | `hap workflow structure` + deterministic diff |
+| Step 6 发布内部流程 | `publish_inner` | 按 `execution_state.inner_pids` 发布 |
+| Step 6 发布主流程 | `publish_main` | 发布 `execution_state.pid` |
+| Step 7 确认 | `complete` | 最终只读结构复核 |
 
 ## Mode B handoff
 

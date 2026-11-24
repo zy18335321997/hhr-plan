@@ -515,7 +515,6 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | 限制 | 说明 |
 |------|------|
 | systemField/nowTime 在 update_record 字段值 | valueRef 翻译失败，需 UI 手动设 |
-| schedule + get_multiple + filter | 此组合间歇 500 |
 | notice 收件人 kind=role | CLI 不支持 role 解析，用 kind=field 或 UI 手动 |
 | delay 节点配置 | node add 成功，但时长保存后归零且节点异常；当前只能建结构 |
 | code 节点配置 | 已由执行器扩展路径覆盖；必须回读源码、输入绑定、重试次数与 isException |

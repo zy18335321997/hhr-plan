@@ -503,7 +503,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="只读调用 HAP worksheet info 校验 fieldId 与 option key"
     )
-    parser.add_argument("contract", help="execution_contract.json")
+    parser.add_argument(
+        "contract", help="execution_contracts/<safe-workflow-name>.json"
+    )
     parser.add_argument(
         "--snapshot-dir",
         help="测试用 worksheet info JSON 目录；提供后不调用 hap CLI",

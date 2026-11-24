@@ -6,19 +6,19 @@
 
 ## 元公理：执行器自身的约束
 
-### E1: 设计方案是唯一真理来源
+### E1: 执行合约是唯一真理来源
 
-> 设计方案（Markdown 或 execution contract JSON）定义了"应该创建什么"。执行器只负责"创建出来"，不负责"判断设计对不对"。
+> 执行合约（`execution_contracts/<safe-workflow-name>.json`，由父技能 hhr-plan 的 `lock_to_contract.py` 从 `execution_lock.json` 派生）定义了"应该创建什么"。执行器只负责"创建出来"，不负责"判断设计对不对"。
 
-- MUST: 节点类型、alias、配置、连接关系全部来自设计方案
-- MUST NOT: 添加设计中不存在的节点、删除设计中的节点、修改节点配置
-- 如果发现设计有问题 → Hard Stop，报告问题，不自行修正
+- MUST: 节点类型、alias、配置、连接关系全部来自执行合约
+- MUST NOT: 生成、补写或手改执行合约；添加合约中不存在的节点、删除合约中的节点、修改节点配置
+- 如果发现合约有问题 → Hard Stop，报告问题，不自行修正
 
 ### E2: 地面真相是平台返回
 
-> "创建成功"只有一个判定标准：平台 API 返回的结构与设计方案一致。hap CLI 的输出可能误导（saveNode 返回 ok 但字段被丢弃）。
+> "创建成功"只有一个判定标准：平台 API 返回的结构与执行合约一致。hap CLI 的输出可能误导（saveNode 返回 ok 但字段被丢弃）。
 
-- MUST: 创建后拉实际结构对比设计方案
+- MUST: 创建后拉实际结构对比执行合约
 - MUST NOT: 相信"看起来成功了"的输出
 
 ### E3: 每一步验证，不累积风险
@@ -39,8 +39,14 @@
 
 - MUST: 每一步把 PID、节点映射、内部流程 PID、完成步骤和错误写入
   `execution_state.json`
-- MUST: `TRANSIENT` 最多重试 3 次；`RUNTIME_DATA` 重跑只读探测；
-  `SEMANTIC/CONTRACT` 回 hhr-plan Mode B；`PARTIAL_WRITE` 等待用户选择补偿
+- MUST: 失败分类以 `scripts/execution_state.py` 的 `classify_failure` 为准。
+  写入步骤（create_skeleton / batch_add / save_actions / publish_inner /
+  publish_main）的任何失败都先归为 `PARTIAL_WRITE`，不自动重试，等待用户选择补偿；
+  其余只读步骤才按消息分类：`TRANSIENT` 最多重试 3 次，
+  `RUNTIME_DATA` 重跑 live preflight 只读探测，`SEMANTIC` 回 hhr-plan Mode B，
+  无法匹配时按 `SEMANTIC` 处理
+- MUST: `PARTIAL_WRITE` 保留 in-progress 标记；恢复时必须先只读探测平台，
+  确认未写入后用 `execution_state.py resolve --outcome no_write` 解除，禁止直接重跑
 - MUST NOT: 重复执行已完成的 batch-add/save/publish 步骤
 - MUST NOT: 在执行器内直接修改 lock 或 contract
 
@@ -48,33 +54,33 @@
 
 ## Pipeline 详细定义
 
-### Step 0: 加载设计方案
+### Step 0: 加载执行合约
 
-🚧 **GATE**: 用户请求创建工作流
+🚧 **GATE**: 用户请求创建工作流；父技能 hhr-plan 已完成设计确认并交接执行合约
 
 **Action**:
 
-1. 确定设计文件路径（用户指定，或在 `~/Documents/workflow-output/` 下搜索）
-2. 读取设计方案
+1. 取父技能交接的执行合约路径：`execution_contracts/<safe-workflow-name>.json`
+   （用户显式指定时以其为准）
+2. 读取执行合约
 3. 提取关键信息：
-   - 工作流名称
-   - 目标应用 appId
-   - 目标组织 orgId
-   - 触发方式（button / worksheet_event / schedule / subprocess）
+   - 工作流名称（meta.workflow_name）
+   - 目标应用 appId、目标组织 orgId、目标工作表 worksheet_id
+   - 触发方式（button / event / schedule / subprocess / pbp；CLI 的
+     `worksheet_event` 对应合约值 `event`）
    - 节点列表（alias + nodeType + config）
 
 ⛔ **BLOCKING — 以下任一情况必须停**：
-```□ 找不到设计方案文件
-□ 设计方案中缺少 appId
-□ 设计方案中缺少工作表 ID
-□ 设计方案中缺少节点 alias 列表
-□ 设计方案中节点类型未标注
+```□ 找不到执行合约文件
+□ 合约缺少 target.app_id / target.org_id / target.worksheet_id
+□ 合约缺少 meta.workflow_name
+□ 合约 nodes 为空或缺少 alias/nodeType
 ```
 
 ✅ **Checkpoint**:
 ```markdown
 ## ✅ Step 0 完成
-- [x] 设计方案已定位：{文件路径}
+- [x] 执行合约已定位：{文件路径}
 - [x] 工作流名称：{name}
 - [x] appId: {appId} | orgId: {orgId}
 - [x] 节点数：{N}
@@ -83,34 +89,43 @@
 
 ---
 
-### Step 1: 提取执行合约
+### Step 1: 校验执行合约
 
-🚧 **GATE**: Step 0 完成，设计方案已加载
+🚧 **GATE**: Step 0 完成
+
+> 用户确认已在 hhr-plan 设计阶段完成；执行器不重复要求确认，只在 Step 2
+> 预检发现与合约/平台偏差时再次停等用户。
+>
+> 执行合约只能由 hhr-plan 的 `lock_to_contract.py` 从 `execution_lock.json`
+> 派生。执行器只消费，不产出、不手改；合约缺失时不得自行生成。
 
 **Action**:
 
-将设计方案转换为结构化执行合约 JSON。格式见 `references/execution-contract-schema.md`。
+运行父技能的权威校验器：
 
-合约包含：
-- 工作流元信息（名称、触发类型、appId、orgId）
-- 节点规格列表（alias、nodeType、config、expected_connections）
-- 字段引用列表（fieldId → 所属工作表 → 预期 option keys）
-- 上游依赖列表（子流程、审批内部流程的 PID）
+```bash
+python3 ~/.claude/skills/hhr-plan/scripts/contract_compat.py validate-exec \
+  execution_contracts/<safe-workflow-name>.json
+```
+
+- 退出码 0 且 `verdict=pass` → 继续
+- 退出码非 0 或 `verdict=fail` → 停。附完整 violations（path + detail）与文件路径，
+  回 hhr-plan Mode B 修正 lock 后重新派生，不修补合约
+
+合约结构见 `references/execution-contract-schema.md`。
 
 ⛔ **BLOCKING — 以下任一情况必须停**：
-```□ 设计方案中 option 值用的是中文文字（不是 UUID key）
-□ 分支 condition 中 left.node 引用不明确
-□ 审批内部 target.node 不是 "approval_start"
-□ 子流程内部 target.node 不是 "sub_trigger"
-□ 设计中引用了 update_record 的输出字段（update_record 无输出）
+```□ 合约文件缺失或无法解析
+□ validate-exec 退出码非 0 / verdict=fail
+□ 会话恢复时合约 digest 与 execution_state 记录不一致 → 重新 init，禁止沿用旧状态
 ```
 
 ✅ **Checkpoint**:
 ```markdown
 ## ✅ Step 1 完成
-- [x] 执行合约已生成
-- [x] 节点引用已校验（作用域隔离）
-- [x] option 值格式已确认（UUID key / literal value）
+- [x] 合约路径：{path}
+- [x] validate-exec: pass（0 violations）
+- [x] 节点数：{N}
 - [ ] **Next**: 进入 Step 2
 ```
 
@@ -128,11 +143,11 @@
 
 ```bash
 python3 ~/.claude/skills/hap-flow-exec/scripts/preflight.py \
-  execution_contract.json
+  execution_contracts/<safe-workflow-name>.json
 python3 ~/.claude/skills/hap-flow-exec/scripts/live_preflight.py \
-  execution_contract.json
+  execution_contracts/<safe-workflow-name>.json
 python3 ~/.claude/skills/hap-flow-exec/scripts/contract_to_batch_dsl.py \
-  execution_contract.json \
+  execution_contracts/<safe-workflow-name>.json \
   --trigger-node-id __preflight_trigger__ \
   --output /tmp/hap-batch-nodes-preflight.json
 ```
@@ -159,7 +174,7 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/contract_to_batch_dsl.py \
 | 6a49..1234 | fieldId | 借阅记录 | 该表无此字段 |
 | 6a49..5678 | option key | 状态字段 | options 中不存在 |
 
-修正设计方案后重新执行。
+修正合约后重新执行（回 hhr-plan Mode B 修正 lock，重新派生合约）。
 ```
 
 ✅ **Checkpoint**:
@@ -180,9 +195,11 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/contract_to_batch_dsl.py \
 
 **Action**:
 
-按触发类型创建：
+合约 `trigger.type` 使用父技能 lock schema 的五个值：`button` / `event` /
+`schedule` / `subprocess` / `pbp`。CLI 的 `--type worksheet_event` 对应合约
+`event`；按钮触发不走 `workflow create`，走 `create-custom-action`。
 
-**按钮触发（推荐）**：
+**按钮触发（推荐，合约值 `button`）**：
 ```bash
 hap worksheet create-custom-action WORKSHEET_ID \
   --app-id APP_ID \
@@ -190,7 +207,7 @@ hap worksheet create-custom-action WORKSHEET_ID \
 # 返回: {actionId, processId, triggerNodeId}
 ```
 
-**工作表事件触发**：
+**工作表事件触发（合约值 `event`；CLI 类型名为 `worksheet_event`）**：
 ```bash
 hap workflow create -c ORG_ID -n "工作流名称" -a APP_ID --type worksheet_event
 hap workflow node batch-add PID \
@@ -199,7 +216,7 @@ hap workflow node batch-add PID \
   --trigger-alias trigger --nodes '[]'
 ```
 
-**定时触发**：
+**定时触发（合约值 `schedule`）**：
 ```bash
 hap workflow create -c ORG_ID -n "工作流名称" -a APP_ID --type schedule
 hap workflow node batch-add PID \
@@ -207,12 +224,27 @@ hap workflow node batch-add PID \
   --trigger-alias trigger --nodes '[]'
 ```
 
+**封装业务流程触发（合约值 `pbp`）**：
+```bash
+hap workflow create -c ORG_ID -n "工作流名称" -a APP_ID --type pbp
+# 触发参数（inputs）在 Step 4 由 run_batch_add.py --trigger-pbp 配置
+```
+
+`pbp` 的触发参数由 Step 4 的 `run_batch_add.py --trigger-pbp '<json>'` 传入
+（对应 CLI `workflow node batch-add --trigger-pbp`），本步只创建 PBP 骨架。
+
+`subprocess`：子流程不在此步单独创建骨架；它由 Step 4 的 `sub_process` 节点
+（`process.mode: "create"`）创建，inner PID 从 batch-output 的 `innerProcessId`
+回填。若合约顶层 `trigger.type=subprocess` 且需要独立创建工作流，当前 CLI 没有
+对应 create 类型，停并报告，不猜 type code。
+
 Step 3 只创建/绑定触发器，不创建业务节点。所有触发类型的业务节点统一在 Step 4
 执行一次；禁止在 Step 3 和 Step 4 重复 batch-add 同一节点。
 
 ⛔ **BLOCKING**：
 ```□ create-custom-action 返回空 PID → 停
 □ workflow create 返回错误 → 停
+□ 合约 trigger.type 无法映射到本步的创建路径 → 停，报告缺失路径
 ```
 
 ✅ **Checkpoint**:
@@ -237,7 +269,7 @@ Step 3 只创建/绑定触发器，不创建业务节点。所有触发类型的
 
 ```bash
 python3 ~/.claude/skills/hap-flow-exec/scripts/contract_to_batch_dsl.py \
-  execution_contract.json \
+  execution_contracts/<safe-workflow-name>.json \
   --trigger-node-id TRIGGER_NODE_ID \
   --output /tmp/hap-batch-nodes.json
 
@@ -259,7 +291,10 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/run_batch_add.py \
 - filter condition 带 `_filedTypeId` hint
 
 ⛔ **BLOCKING**：
-```□ batch-add 返回非 0 → 停。报告完整 stderr + stdout
+```□ run_batch_add.py 退出码非 0 → 停。退出码语义：
+  0 = 成功（含结构恢复成功）；1 = batch-add 失败且恢复失败；
+  2 = nodes 文件不可读/非法 JSON、batch 输出非法、缺 aliasToNodeId、
+      或 --trigger-pbp 参数非法。报告完整 stderr + stdout
 □ batch-add 输出无法解析为 JSON → 停。报告原始输出
 □ 返回的节点数 ≠ 预期节点数 → 停。列出差异
 ```
@@ -293,12 +328,12 @@ hap --json workflow structure INNER_PID > /tmp/hap-workflow-structure-inner.json
 python3 ~/.claude/skills/hap-flow-exec/scripts/structure_to_mappings.py \
   /tmp/hap-workflow-structure-main.json \
   /tmp/hap-workflow-structure-inner.json \
-  --contract execution_contract.json \
+  --contract execution_contracts/<safe-workflow-name>.json \
   --batch-output /tmp/hap-batch-output.json \
   --output /tmp/hap-inner-alias-mappings.json
 
 python3 ~/.claude/skills/hap-flow-exec/scripts/save_actions.py \
-  --contract execution_contract.json \
+  --contract execution_contracts/<safe-workflow-name>.json \
   --pid PID \
   --batch-output /tmp/hap-batch-output.json \
   --inner-mappings /tmp/hap-inner-alias-mappings.json
@@ -317,7 +352,7 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/save_actions.py \
 
 > ⚠️ **get_multiple filter 必须用 `filters` 格式** — 服务器 bug #036489 导致 `operateCondition` 静默丢弃。脚本自动处理。
 
-> ⚠️ **不用系统字段**（如 wfstatus）——系统字段被平台拦截，saveNode 静默丢弃。设计方案中需要标记流程状态的字段用自定义单选字段替代。
+> ⚠️ **不用系统字段**（如 wfstatus）——系统字段被平台拦截，saveNode 静默丢弃。执行合约中需要标记流程状态的字段用自定义单选字段替代。
 
 **fieldValue**：选项字段填 option key（UUID 或自定义 key），不是中文文字；
 Relation 字段填目标记录 `rowId`（GUID），不是记录 `_id`。单关联使用一个
@@ -457,8 +492,8 @@ hap --json workflow structure PID | jq '.nodes | length'
 ✅ **Checkpoint**:
 ```markdown
 ## ✅ Step 7 完成 — Pipeline Complete
-- [x] Step 0: 设计方案已加载
-- [x] Step 1: 执行合约已提取
+- [x] Step 0: 执行合约已加载
+- [x] Step 1: 执行合约已校验（validate-exec pass）
 - [x] Step 2: 预检全部通过
 - [x] Step 3: 工作流骨架已创建
 - [x] Step 4: 节点已批量配置
@@ -473,8 +508,8 @@ hap --json workflow structure PID | jq '.nodes | length'
 
 | 条件 | 触发 Step | 行为 |
 |------|----------|------|
-| 设计文件缺失 | 0 | 列出搜索路径，等待用户提供 |
-| 关键 ID 缺失 | 1 | 列出缺失项，等待补充 |
+| 执行合约缺失 | 0 | 列出搜索路径，等待父技能交接或用户提供 |
+| 合约校验失败 | 1 | 附完整 violations，回 hhr-plan Mode B 修正 lock 后重新派生 |
 | fieldId 不存在 | 2 | 列出无效 ID + 来源表 |
 | option key 不存在 | 2 | 列出字段 + 当前 options |
 | batch-add 失败 | 4 | 报告完整错误 + 请求体 |
@@ -482,15 +517,6 @@ hap --json workflow structure PID | jq '.nodes | length'
 | publish 失败 | 6 | 报告错误，不重试 |
 | 同一错误 2 次 | 任意 | 标记已知限制，不继续 |
 
-## 禁止行为（来自真实失败记录）
+## 禁止行为
 
-| 禁止 | 原因 | 来源 |
-|------|------|------|
-| 修改设计方案中的节点链路 | 设计是权威输入 | session 1 |
-| 跳过分步创建用"简化的 batch-add" | 产生 phantom nodes | session 1 |
-| 对 saveNode 返回 ok 不做二次验证 | saveNode 静默丢弃字段 | session 1 |
-| 分支 condition.left.node 填分支自身 alias | 必须填数据源 alias | session 1 |
-| 同一批次创建多个工作流 | 上下文污染，操作混淆 | session 1 |
-| 不验证就声称完成 | 实际配置缺失 | session 1 |
-| 对失败用重试替代排查 | 掩盖根因 | session 1 |
-| 用 node add + save-action 替代 batch-add | 每次 addNode 产生一对节点 | session 1 |
+具体条目与来源见 `references/behavior-traps.md`（T1/T2/T3/T9、B2/B3/B4），本文件不重复。
