@@ -1,16 +1,16 @@
 ---
 name: hhr-plan
-description: 明道云 APaaS 设计引擎与统一入口。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用；也负责把搭建/修改 HAP 应用、日常数据运营与审批、Compute 应用（网站/PostgreSQL/业务函数/登录页）等意图交接给对应能力。
+description: 明道云 APaaS 设计引擎与统一入口。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用；也负责把搭建/修改 HAP 应用、日常数据运营与审批、Compute 应用（网站/PostgreSQL/业务函数/登录页）、HAP 前端网站与 V3 API、视图插件、hap 命令行操作等意图交接给对应能力。
 user_invocable: true
-version: 2.2.0
+version: 2.3.0
 lifecycle: validated
 references:
   - system-prompt.md
 ---
 
-# hhr-plan 2.2.0
+# hhr-plan 2.3.0
 
-明道云 APaaS 设计、诊断与审计入口，也是 HAP 应用助手与 HAP Compute 的统一交接入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
+明道云 APaaS 设计、诊断与审计入口，也是 HAP 应用助手、HAP Compute、HAP 前端与 API、hap 命令行的统一交接入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
 
 ## 1. 先分流：能力域，或轻量查询 / 全量任务
 
@@ -22,6 +22,10 @@ references:
 |---|---|---|
 | 搭建/继续搭建/修改重构/数据迁移 HAP 应用；线上配置查看与故障修复；日常数据查询统计、记录增删改、审批待办、触发业务流程 | Skill `hap-mcp-app-builder`（HAP 应用助手，MCP `hap_personal_mcp` 为工具底座） | `references/capability-routing.md` |
 | 创建/修改/部署 Compute 网站、PostgreSQL 数据应用、业务函数、应用登录页；Compute 安装/接入/更新、登录组织、状态用量 | Skill `hap-compute-app`（CLI `hap-compute`） | `references/capability-routing.md` |
+| HAP 作为数据底座的前端项目：官网、前后端分离、内容管理系统的开发与渲染 | Skill `hap-api-website` | `references/capability-routing.md` |
+| HAP V3 开放 API 直接调用：Appkey/Sign/PAT/OAuth 鉴权、Filter 筛选、数据接口读写 | Skill `hap-apiv3-data` | `references/capability-routing.md` |
+| HAP 自定义视图插件开发（mdye 脚手架、视图调试） | Skill `hap-view-plugin` | `references/capability-routing.md` |
+| hap 命令行操作：通讯录/聊天消息/动态/日程、工作表记录读写、审批待办、角色权限、文件上传；已有应用的单点局部修改；复杂筛选与透视统计；多环境多账号守则 | Skill `hap-cli`（子技能 `hap-cli-app-editor` / `hap-cli-data-query` / `hap-cli-environments`） | `references/capability-routing.md` |
 
 设计规格、根因诊断、健康审计仍走 Mode A–D。交接边界（诊断 vs 线上排查、设计确认后的执行去向、不可用降级）见 `references/capability-routing.md`。
 
