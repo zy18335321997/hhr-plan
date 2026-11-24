@@ -18,20 +18,33 @@ patterns/
 │   ├── single-sign.md
 │   ├── multi-level.md
 │   ├── conditional-approval.md
-│   └── retreat-refill.md
+│   ├── retreat-refill.md
+│   ├── approval-with-cc.md
+│   └── timeout-auto.md
 ├── trigger/                     ← 触发模式
 │   ├── _index.md
 │   ├── button-trigger.md
+│   ├── schedule-trigger.md
+│   ├── approval-trigger.md
+│   ├── subprocess-trigger.md
 │   ├── event-trigger.md
-│   └── subprocess-trigger.md
+│   └── chained-trigger.md
 ├── notification/                ← 通知策略模式
 │   ├── _index.md
-│   └── approval-result.md
+│   ├── approval-result.md
+│   ├── task-assignment.md
+│   ├── alert-escalation.md
+│   ├── periodic-digest.md
+│   ├── cascade-notify.md
+│   └── status-sync.md
 └── data-validation/             ← 数据校验模式
     ├── _index.md
     ├── required-field-check.md
     ├── dedup-check.md
-    └── parent-child-consistency.md
+    ├── parent-child-consistency.md
+    ├── range-validation.md
+    ├── state-precondition.md
+    └── ref-existence-check.md
 ```
 
 ## 使用方式

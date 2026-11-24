@@ -80,6 +80,7 @@ references:
 - `references/unified-design-spec.md`：完整度、正确性、可构建性详细门控的唯一真源。
 - `agents/verification-orchestrator.md`：独立 Agent 调用、格式校验与裁决合并。
 - `references/templates/execution-lock-schema.md`：设计锁和执行合约交接。
+- `references/patterns/README.md`：可复用模式库总索引（结构模式经 `pattern-select.md`，领域模式经各目录 `_index.md` 自动选择表）。
 
 字段、工作流、平台能力和行业参考只在对应步骤命中时加载，不预加载整个 `references/`。
 

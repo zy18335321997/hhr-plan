@@ -11,10 +11,11 @@
 
 ### Step 2: 模式库检索
 
-查 `references/patterns/modules/` 目录：
-- 模块名匹配
-- 实体名匹配
-- 关键词匹配（如"审批"→匹配审批链模板、"通知"→匹配通知模板）
+查模式库，结构模式按数据流签名、领域模式按业务场景：
+
+- `references/patterns/modules/`：模块名 / 实体名 / 数据流签名匹配结构模式
+- `references/patterns/{approval,trigger,notification,data-validation}/`：业务场景匹配，先读该目录 `_index.md` 的自动选择表，再定位具体模式文件（如"审批"→`approval/_index.md`，"通知"→`notification/_index.md`）
+- 总索引与加载顺序见 `references/patterns/README.md`
 
 ### Step 3: 覆盖率估算
 
@@ -42,7 +43,7 @@
 
 ## 沉淀触发
 
-当 Mode A/B 完成后，如果设计方案覆盖了 `references/patterns/modules/` 中不存在的业务场景，询问用户是否沉淀为新模板。
+当 Mode A/B 完成后，如果设计方案覆盖了 `references/patterns/modules/` 或领域目录中不存在的业务场景，询问用户是否沉淀为新模板。
 
 ## 交互
 
