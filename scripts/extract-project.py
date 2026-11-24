@@ -40,6 +40,7 @@ from datetime import datetime
 # Ensure scripts/ directory is in path for auth module imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import context_fields
 import field_mappings
 import mcp_workflow_structure
 import node_editor_config
@@ -740,6 +741,7 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
         node_data[pid] = {
             "name": wf_name,
             "worksheet": wf_worksheet,
+            "trigger_sheet": summary["trigger_sheet"],
             "trigger": trig_label,
             "trigger_type_id": trig_id,
             "node_count": summary["node_count"],
@@ -750,7 +752,7 @@ def extract_workflow_nodes_from_file(nodes_file: str, wf_list: list[dict]) -> di
             "approval_count": summary["approval_count"],
             "incomplete": summary["incomplete"],
         }
-        
+
         if (i + 1) % 100 == 0:
             print(f"    {i + 1}/{total}...")
     
@@ -870,6 +872,7 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
             node_data[pid] = {
                 "name": wf_name,
                 "worksheet": wf_worksheet,
+                "trigger_sheet": summary["trigger_sheet"],
                 "trigger": trig_label,
                 "trigger_type_id": trig_id,
                 "node_count": summary["node_count"],
@@ -891,6 +894,7 @@ def extract_workflow_nodes(base_url: str, wf_list: list[dict], project_dir: str 
             node_data[pid] = {
                 "name": wf_name,
                 "worksheet": wf_worksheet,
+                "trigger_sheet": "",
                 "trigger": trig_label,
                 "trigger_type_id": trig_id,
                 "node_count": 0, "reads": [], "writes": [],
@@ -1266,6 +1270,24 @@ def build_context(project_name: str, ws_map: dict[str, dict],
             if trigger:
                 trigger_dist[trigger] += 1
 
+    # Derived sections shared with build_context.py (legacy _extracted layout).
+    # Modern extraction keeps only id/name/type/required/isTitle per field, so
+    # association targets and auto-number formats are often absent. Fall back
+    # to workflow read/write edges and auto-number field names when needed.
+    worksheet_records = [
+        {"name": name, "worksheet_id": info.get("id", ""), "fields": info.get("fields", [])}
+        for name, info in worksheets.items()
+    ]
+    derived = context_fields.compute_context_fields(worksheet_records)
+    if not derived["relation_graph"] and node_data:
+        edges, reverse_edges = context_fields.compute_workflow_edges(node_data)
+        derived["relation_graph"] = {k: list(v) for k, v in edges.items()}
+        derived["reverse_refs"] = {k: list(v) for k, v in reverse_edges.items()}
+        derived["hub_tables"] = context_fields.compute_hub_tables(reverse_edges)
+    if not derived["naming"]["auto_number_prefixes"]:
+        derived["naming"]["auto_number_prefixes"] = \
+            context_fields.auto_number_prefixes_from_field_names(worksheet_records)
+
     return {
         "project": {
             "name": project_name,
@@ -1274,9 +1296,9 @@ def build_context(project_name: str, ws_map: dict[str, dict],
             "total_modules": 1,
         },
         "worksheets": worksheets,
-        "relation_graph": {},
-        "hub_tables": [],
-        "naming": {},
+        "relation_graph": derived["relation_graph"],
+        "hub_tables": derived["hub_tables"],
+        "naming": derived["naming"],
         "workflows": {
             "trigger_distribution": dict(sorted(trigger_dist.items(), key=lambda x: -x[1])),
             "total_approval_chains_sampled": 0,
