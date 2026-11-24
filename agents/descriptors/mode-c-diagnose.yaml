@@ -26,7 +26,6 @@ interface:
     - scripts/rebuild_graph.py --lifecycle
     - hap-bridge wf-nodes --raw
     - hap-bridge call get_worksheet_structure
-    - scripts/diagnose.py（自动化管线）
   produces:
     - 术语映射（客户用语→系统实体）
     - 工作流定位（PID + 触发表 + 节点链）

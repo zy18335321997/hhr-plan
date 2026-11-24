@@ -53,4 +53,4 @@ interface:
   references:
     - built-in-skills/mode-d-audit.md
     - agents/audit-scanner.md
-    - references/axioms/evidence-matrix.md
+    - references/axioms/coverage-ledger.tsv

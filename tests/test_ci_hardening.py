@@ -166,25 +166,6 @@ class HardeningStaticTests(unittest.TestCase):
             self.assertIn("hap-flow-exec", document)
         self.assertIn("--source-design", mode_b)
 
-    def test_platform_validate_never_calls_a_write_operation(self):
-        script = (SCRIPTS / "platform-validate.py").read_text(encoding="utf-8")
-        self.assertNotIn("wf-publish", script)
-        self.assertNotIn("subprocess", script)
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(SCRIPTS / "platform-validate.py"),
-                "--workflow-id",
-                "wf-test",
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(2, completed.returncode)
-        self.assertEqual("skipped", json.loads(completed.stdout)["verdict"])
-
     def test_node_capabilities_lists_all_verify_platform_type_ids(self):
         guide = (
             ROOT / "references" / "platform" / "node-capabilities.md"

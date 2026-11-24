@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T11:51:43.715720+00:00",
+  "generated_at": "2026-11-24T06:54:33.000908+00:00",
   "source": "skill_discovery.py",
   "skill_dir": ".",
   "modes": {
@@ -249,8 +249,7 @@
         "scripts/search.py",
         "scripts/rebuild_graph.py --lifecycle",
         "hap-bridge wf-nodes --raw",
-        "hap-bridge call get_worksheet_structure",
-        "scripts/diagnose.py（自动化管线）"
+        "hap-bridge call get_worksheet_structure"
       ],
       "produces": [
         "术语映射（客户用语→系统实体）",
@@ -339,7 +338,7 @@
       "references": [
         "built-in-skills/mode-d-audit.md",
         "agents/audit-scanner.md",
-        "references/axioms/evidence-matrix.md"
+        "references/axioms/coverage-ledger.tsv"
       ],
       "_descriptor_path": "agents/descriptors/mode-d-audit.yaml",
       "skill_md": "built-in-skills/mode-d-audit.md",
@@ -494,10 +493,6 @@
         "--output"
       ]
     },
-    "aggregate.py": {
-      "description": "Hu Haoran Methodology Distiller - Phase 0 & Phase 1",
-      "arguments": []
-    },
     "auth.py": {
       "description": "Auth module: read Chrome cookies for Mingdao API access.",
       "arguments": []
@@ -506,24 +501,16 @@
       "description": "Auto-sync all derived data (index, graph, topology).",
       "arguments": []
     },
-    "batch_cli_fetch.py": {
-      "description": "CLI 批量拉取全量工作流节点数据 → 覆盖旧缓存 → 重建所有索引",
-      "arguments": []
-    },
-    "batch_mcp_fetch.py": {
-      "description": "MCP 批量拉取所有工作流名称+基本信息 → 重建 name_index.json + sheet_workflows.json",
-      "arguments": []
-    },
-    "build_context.py": {
-      "description": "Project Context Extractor",
-      "arguments": []
-    },
     "build_search_index.py": {
       "description": "Build FTS5 search index for hhr-plan project data.",
       "arguments": []
     },
     "build_snapshot.py": {
       "description": "Project Snapshot Builder",
+      "arguments": []
+    },
+    "context_fields.py": {
+      "description": "Shared computation for the derived project_context.json sections.",
       "arguments": []
     },
     "contract_compat.py": {
@@ -557,10 +544,6 @@
         "--graph-file"
       ]
     },
-    "diagnose.py": {
-      "description": "Customer Diagnostic Assistant",
-      "arguments": []
-    },
     "extract-project.py": {
       "description": "Full project extraction — 替代 workflow-analyzer。",
       "arguments": []
@@ -571,10 +554,6 @@
     },
     "field_mappings.py": {
       "description": "Readable 「将字段 / 设为」 mappings for workflow create and update nodes.",
-      "arguments": []
-    },
-    "generate_manual.py": {
-      "description": "Customer-Facing Operations Guide Generator",
       "arguments": []
     },
     "generate_node_data.py": {
@@ -612,13 +591,6 @@
       "description": "Readable editor configuration for every real workflow node.",
       "arguments": []
     },
-    "platform-validate.py": {
-      "description": "平台只读校验占位入口。",
-      "arguments": [
-        "--workflow-id",
-        "--lock-file"
-      ]
-    },
     "platform_router.py": {
       "description": "平台路由 — 任意明道云私有部署的 URL 解析、认证与内部 API 访问。",
       "arguments": [
@@ -654,14 +626,6 @@
     "sheet_workflows.py": {
       "description": "Sheet → Workflows 反向索引查询（含 search.py 交叉校验）",
       "arguments": []
-    },
-    "summarize-output.py": {
-      "description": "Token 预算版摘要 — 将 Agent 1/2 的完整 JSON 压缩为 Agent 可消费的简短格式。",
-      "arguments": [
-        "--agent1",
-        "--agent2",
-        "--quiet"
-      ]
     },
     "validate-agent-output.py": {
       "description": "验证 Agent 1/2/3 统一输出 envelope 的完整性。",

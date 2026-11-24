@@ -221,7 +221,7 @@ if [[ ${#CHECK_PROJECTS[@]} -gt 0 ]]; then
             err "[$project] project_context.json 无效或 worksheets 为空"
         fi
     else
-        err "[$project] project_context.json 缺失 — 运行 build_context.py"
+        err "[$project] project_context.json 缺失 — 运行 extract-project.py"
     fi
 
     # 2.3 business-flow-manifest.json

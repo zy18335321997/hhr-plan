@@ -21,7 +21,6 @@ sys.path.insert(0, str(SCRIPTS))
 
 import platform_router  # noqa: E402
 import wf_fetch  # noqa: E402
-import batch_cli_fetch  # noqa: E402
 
 PID24 = "6a5d92351e5bb38f1cbea440"
 APP_UUID = "a8120f48-9362-43ca-b60d-3a7e206f77cd"
@@ -609,13 +608,6 @@ class WfFetchRefreshTests(unittest.TestCase):
         amb = json.loads((self.data / "proj" / "ambiguous_names.json").read_text(encoding="utf-8"))
         self.assertNotIn("同名流程", index)
         self.assertEqual(amb["同名流程"], ["pid-a", "pid-b"])
-
-
-class BatchCliFetchTests(unittest.TestCase):
-    def test_both_source_markers_accepted(self):
-        self.assertTrue(batch_cli_fetch._is_success('{"source": "cli_wf-nodes"}'))
-        self.assertTrue(batch_cli_fetch._is_success('{"source": "platform_internal"}'))
-        self.assertFalse(batch_cli_fetch._is_success('{"source": "mcp_fallback"}'))
 
 
 if __name__ == "__main__":
