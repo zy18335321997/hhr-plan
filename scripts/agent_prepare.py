@@ -255,7 +255,6 @@ def prepare_brief(
 
         brief["workflows"].append({
             "name": wf.get("name", ""),
-            "deployment": copy.deepcopy(wf.get("deployment", {})),
             "trigger_sheet": wf.get("trigger_sheet", ""),
             "trigger_type": wf.get("trigger_type", ""),
             "trigger": copy.deepcopy(wf.get("trigger", {})),

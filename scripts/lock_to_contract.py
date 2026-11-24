@@ -505,7 +505,6 @@ def convert_lock(
             "app_id": target.get("app_id"),
             "worksheet_id": worksheet_id,
         },
-        "deployment": copy.deepcopy(workflow.get("deployment", {})),
         "trigger": copy.deepcopy(trigger),
         "nodes": converted_nodes,
         "field_references": converted_references,

@@ -12,11 +12,6 @@
     "app_id": "app-001",
     "worksheet_id": "ws-purchase"
   },
-  "deployment": {
-    "mode": "create_new",
-    "process_id": null,
-    "name_check": "平台精确名称查重未发现同名工作流"
-  },
   "trigger": {
     "type": "button",
     "config": {

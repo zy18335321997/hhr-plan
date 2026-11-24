@@ -965,43 +965,6 @@ def validate_exec(data: dict) -> list[dict]:
         for key in ("org_id", "app_id", "worksheet_id"):
             _require_nonempty(target.get(key), f"$.target.{key}", violations)
 
-    deployment = data.get("deployment")
-    if deployment is not None:
-        if not isinstance(deployment, dict):
-            collect_violation(
-                violations,
-                "high",
-                "$.deployment",
-                "deployment 必须是对象",
-            )
-        else:
-            mode = deployment.get("mode")
-            if mode not in {"create_new", "configure_existing"}:
-                collect_violation(
-                    violations,
-                    "high",
-                    "$.deployment.mode",
-                    f"deployment.mode 值无效: {mode!r}",
-                )
-            if mode == "configure_existing":
-                _require_nonempty(
-                    deployment.get("process_id"),
-                    "$.deployment.process_id",
-                    violations,
-                )
-            if mode == "create_new" and deployment.get("process_id"):
-                collect_violation(
-                    violations,
-                    "high",
-                    "$.deployment.process_id",
-                    "create_new 不得预填 process_id",
-                )
-            _require_nonempty(
-                deployment.get("name_check"),
-                "$.deployment.name_check",
-                violations,
-            )
-
     trigger = data.get("trigger")
     _required_keys(trigger, ["type", "config"], "$.trigger", violations)
     if isinstance(trigger, dict):
