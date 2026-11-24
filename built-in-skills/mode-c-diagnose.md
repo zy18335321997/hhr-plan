@@ -54,7 +54,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 2.5 ──→ Step 3 ─
 
 > PID 确认见 `system-prompt.md`「行为陷阱·诊断」。未确认 → 不进入 Step 1。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 0 完成
@@ -98,7 +98,7 @@ Step 0 ──→ Step 1 ──→ Step 2 ──→ Step 2.5 ──→ Step 3 ─
 4. 如读写链路不够详细 → 运行 `python3 ~/.claude/skills/hhr-plan/scripts/wf_fetch.py "{项目名}" "<PID>"` 读取该工作流的 `node_configs.json`
 5. **运行时降级**: 如 manifest/node_configs 不可用，走 `references/runtime-probe.md` §Mode C 降级诊断流
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 1 完成
@@ -134,7 +134,7 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 - `✓审批` 链是否完整？审批人为空时的代理策略？（公理2）
 - **`⏸CreateEvent` (typeId=26) 是否阻塞等待审批完成？** — 如审批未完成，后续节点不会执行，这是最常见的"数据不更新"根因
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 2 完成
@@ -161,7 +161,7 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 3. **不假设 manifest 的 PID 映射正确。** 如果节点详情中触发器 `appName` 与 manifest 中声明的所属工作表不一致 → 以 API 返回值（`cli.py call get_workflow_details`）为准，标记 manifest 数据不可靠。
 4. 如果连续 2 次从 manifest 查到的 PID 与实际工作流不符 → 降级走 `references/runtime-probe.md`，直接调 API。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 2.5 完成
@@ -193,7 +193,7 @@ chain: ⏎触发 → 🔍查询(目标表A, onEmpty=?) → ⑂分支 → +新增
 
 连续 3 个假说不成立 → 停止，列出已验证/已排除的假说 + 已知/未知清单。**不输出无依据的猜测。**
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 3 完成
@@ -224,7 +224,7 @@ python3 ~/.claude/skills/hhr-plan/scripts/rebuild_graph.py "<项目名>" --lifec
 
 未查依赖图 → 影响面未知 → 诊断结论不完整 → **不输出**。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 4 完成

@@ -71,7 +71,7 @@ manifest/context 不可用或不完整 → 停止，加载 `references/runtime-p
 | **Minor** | 偏离最佳实践，建议优化 | 颜色语义不标准、字段排列不统一 |
 | **Info** | 信息性提示 | 可复用→建议封装、相似模块→建议统一 |
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 1 完成
@@ -88,7 +88,7 @@ manifest/context 不可用或不完整 → 停止，加载 `references/runtime-p
 
 按 `references/unified-design-spec.md` 模式适配表 Mode D 行确定扫描维度，再按 `system-prompt.md` 五公理 MUST/MUST NOT 逐项扫描。不在本文件复制检查项。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 2 完成
@@ -130,7 +130,7 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
   补扫后重新调用 Agent 3。
 - 重检仍失败：保留失败 state，报告 blocker；不得把审计标记为完成，不得手工改 pass。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 3 完成

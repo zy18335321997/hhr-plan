@@ -70,7 +70,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 □ 不做 → 说明原因
 ```
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 0 完成
@@ -106,7 +106,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 5. 不确定项进入 `assumptions`，标注置信度和待确认状态；不得因为待确认就停止生成
    条件化完整方案。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 1 完成
@@ -203,7 +203,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 ⛔ **完整呈现 Tier 1、Tier 2、状态机、权限视图和需求追踪后，停等一次确认。**
 确认前可以输出完整设计文档草案，但不得生成可执行 gates 或进入 CLI。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Design Confirmations 完成
@@ -229,7 +229,7 @@ Step 0 ──→ Step 1 ──→ Design ──→ Step 2 ──→ Step 3 ─�
 字段数量只作复杂度提示，不作为完成标准；完成标准是需求追踪 100%、状态转换可闭环、
 每个交互角色都有权限和视图落点。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 2 完成
@@ -276,7 +276,7 @@ VComplex 必须使用子流程拆分（元公理A）。
 
 T0→T1→...→Tn，每个节点标注写入字段。验证：Tn 只读 T0..T{n-1} 已写的字段。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 3 完成
@@ -296,7 +296,7 @@ T0→T1→...→Tn，每个节点标注写入字段。验证：Tn 只读 T0..T{n
 
 逐字段按模板输出。加载 `references/templates/` 下所需模板文件。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 4 完成
@@ -319,7 +319,7 @@ T0→T1→...→Tn，每个节点标注写入字段。验证：Tn 只读 T0..T{n
 |------|---------|---------|---------|------|
 ```
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 5 完成
@@ -341,7 +341,7 @@ T0→T1→...→Tn，每个节点标注写入字段。验证：Tn 只读 T0..T{n
 - 每个交互角色都有权限、视图和按钮落点。
 - Step 1 命中的模式已实际回填字段与节点，不只是附加一份匹配报告。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 6 完成
@@ -426,7 +426,7 @@ python3 "${SKILL_DIR}/scripts/verification_merge.py" \
 平台写入验证不属于设计门控。用户确认执行后，由 `hap-flow-exec` 按执行合约创建工作流并
 验证；设计阶段不得用发布动作冒充只读校验。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 7 完成

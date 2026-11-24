@@ -151,7 +151,7 @@ ${PROJECT_DIR}/<模块>/<工作表>/工作流/<工作流名>/node_configs.json
 
 ⛔ **再次停等用户确认或修改 Tier 2。** 用户回复后，自动进入 Step 1 影响面分析。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 0 完成
@@ -210,7 +210,7 @@ python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --reads-from -p "<当前项�
 
 输出完整依赖关系图 + 影响面报告 → 等待用户决策。用户确认后再进入 Step 2。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 1 完成
@@ -299,7 +299,7 @@ python3 "${SKILL_DIR}/scripts/search.py" "<表名>" --reads-from -p "<当前项�
 - □ 字段权限、行范围和通知对象是否覆盖所有交互角色？
 - □ 每个新增 `REQ-*` 已追踪到字段、状态转换、工作流及至少一个用户入口？
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 2 完成
@@ -381,7 +381,7 @@ contract/preflight，不运行任何发布或保存命令。确认后的全应�
 `hap-mcp-app-builder`（见 `references/capability-routing.md`），`hap-flow-exec`
 只负责按执行合约创建工作流。
 
-### ✅ Checkpoint
+### 完成标记
 
 ```markdown
 ## ✅ Step 3 完成
