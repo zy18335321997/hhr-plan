@@ -347,6 +347,7 @@ echo "[9] Python unittest"
 if (
     cd "$SKILL_DIR"
     python3 -m unittest discover -s tests -p 'test_*.py'
+    python3 -m unittest discover -s hap-flow-exec/tests -p 'test_*.py'
 ); then
     ok "全部 unittest 通过"
 else
