@@ -12,6 +12,8 @@ Step 2 静态预检脚本：验证执行合约结构和引用形状。
 不调用 hap CLI。平台 fieldId/option key 存在性由 live_preflight.py 只读验证。
 """
 
+import base64
+import binascii
 import json
 import sys
 import re
@@ -114,6 +116,75 @@ def validate_static(contract: dict) -> tuple[bool, list[str]]:
             errors.append(f"节点 {node['alias']} 缺少 nodeType")
         if "config" not in node:
             errors.append(f"节点 {node['alias']} 缺少 config")
+
+    # 3.1 扩展节点的可执行配置必须在任何平台写入前完整。
+    for node in nodes:
+        alias = node.get("alias", "")
+        node_type = node.get("nodeType")
+        config = node.get("config") or {}
+        if node_type == "code":
+            code_value = str(config.get("code") or "").strip()
+            if not code_value:
+                errors.append(f"代码节点 {alias} 缺少 config.code")
+            code_encoding = str(
+                config.get("codeEncoding") or "source"
+            ).lower()
+            if code_encoding in {"base64", "utf8_base64"} and code_value:
+                try:
+                    decoded = base64.b64decode(
+                        code_value.encode("ascii"),
+                        validate=True,
+                    ).decode("utf-8")
+                except (
+                    UnicodeEncodeError,
+                    UnicodeDecodeError,
+                    binascii.Error,
+                ):
+                    errors.append(
+                        f"代码节点 {alias} 的 config.code 不是有效 UTF-8 Base64"
+                    )
+                else:
+                    source = config.get("source")
+                    if isinstance(source, str) and source and source != decoded:
+                        errors.append(
+                            f"代码节点 {alias} 的 config.source 与 Base64 解码结果不一致"
+                        )
+            input_names = [
+                item.get("name")
+                for item in config.get("inputs", config.get("inputDatas", []))
+                if isinstance(item, dict) and item.get("name")
+            ]
+            if len(input_names) != len(set(input_names)):
+                errors.append(f"代码节点 {alias} 的输入参数名重复")
+        elif node_type == "pbp_call":
+            if not (config.get("processId") or config.get("appId")):
+                errors.append(f"PBP 调用节点 {alias} 缺少 processId")
+            for index, field in enumerate(
+                config.get("inputs", config.get("fields", []))
+            ):
+                if not isinstance(field, dict) or not field.get("fieldId"):
+                    errors.append(
+                        f"PBP 调用节点 {alias} inputs[{index}] 缺少 fieldId"
+                    )
+        elif node_type == "pbp_output":
+            for index, field in enumerate(
+                config.get("outputs", config.get("fields", []))
+            ):
+                if not isinstance(field, dict):
+                    errors.append(
+                        f"PBP 输出节点 {alias} outputs[{index}] 必须是对象"
+                    )
+                    continue
+                for key in ("fieldId", "fieldName", "type"):
+                    if field.get(key) in (None, ""):
+                        errors.append(
+                            f"PBP 输出节点 {alias} outputs[{index}] 缺少 {key}"
+                        )
+        elif node_type == "interface_push":
+            if int(config.get("pushType", 1)) == 1 and not str(
+                config.get("content") or ""
+            ).strip():
+                errors.append(f"界面推送节点 {alias} 的弹出提示内容不能为空")
 
     # 4. 分支条件 left.node 检查
     for node in nodes:

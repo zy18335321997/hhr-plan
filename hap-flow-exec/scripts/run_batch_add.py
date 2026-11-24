@@ -9,6 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import hap_dsl_extensions
+
 
 def _expected_main_nodes(nodes: list[dict]) -> list[dict]:
     expected = []
@@ -113,19 +115,59 @@ def run_batch_add(
     nodes: list[dict],
     hap_bin: str = "hap",
     trigger_alias: str = "trigger",
+    trigger_pbp: dict | None = None,
 ) -> tuple[dict, int]:
+    if hap_dsl_extensions.contains_extended_nodes(nodes):
+        try:
+            output = hap_dsl_extensions.run_extended_batch_add(
+                pid,
+                nodes,
+                trigger_alias=trigger_alias,
+                trigger_pbp=trigger_pbp,
+            )
+        except Exception as exc:  # noqa: BLE001 - return a structured boundary
+            recovered = recover_from_structure(
+                pid,
+                nodes,
+                hap_bin,
+                trigger_alias,
+            )
+            if recovered:
+                return recovered, 0
+            return {
+                "verdict": "fail",
+                "code": "EXTENDED_BATCH_ADD_FAILED",
+                "pid": pid,
+                "detail": str(exc),
+            }, 1
+        output["pid"] = pid
+        output["verdict"] = "pass"
+        return output, 0
+
+    command = [
+        hap_bin,
+        "workflow",
+        "node",
+        "batch-add",
+        pid,
+        "--trigger-alias",
+        trigger_alias,
+        "--nodes",
+        json.dumps(nodes, ensure_ascii=False, separators=(",", ":")),
+    ]
+    if trigger_pbp is not None:
+        command.extend(
+            [
+                "--trigger-pbp",
+                json.dumps(
+                    trigger_pbp,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        )
     completed = subprocess.run(
-        [
-            hap_bin,
-            "workflow",
-            "node",
-            "batch-add",
-            pid,
-            "--trigger-alias",
-            trigger_alias,
-            "--nodes",
-            json.dumps(nodes, ensure_ascii=False, separators=(",", ":")),
-        ],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -176,6 +218,7 @@ def main() -> int:
     parser.add_argument("--nodes-file", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--trigger-alias", default="trigger")
+    parser.add_argument("--trigger-pbp", help="PBP trigger config JSON or file")
     parser.add_argument("--hap-bin", default="hap")
     args = parser.parse_args()
     try:
@@ -189,11 +232,34 @@ def main() -> int:
             )
         )
         return 2
+    trigger_pbp = None
+    if args.trigger_pbp:
+        trigger_source = Path(args.trigger_pbp)
+        try:
+            if trigger_source.is_file():
+                trigger_pbp = json.loads(
+                    trigger_source.read_text(encoding="utf-8")
+                )
+            else:
+                trigger_pbp = json.loads(args.trigger_pbp)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                json.dumps(
+                    {
+                        "verdict": "fail",
+                        "code": "PBP_TRIGGER_CONFIG_INVALID",
+                        "detail": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 2
     result, exit_code = run_batch_add(
         args.pid,
         nodes,
         args.hap_bin,
         args.trigger_alias,
+        trigger_pbp,
     )
     if exit_code == 0:
         atomic_write(args.output, result)

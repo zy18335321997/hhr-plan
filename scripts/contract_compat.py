@@ -123,12 +123,14 @@ def _walk_config_field_refs(
     path: str,
     violations: list[dict],
     require_option_object: bool = True,
+    virtual_field_ids: set[str] | None = None,
 ) -> None:
+    virtual_field_ids = virtual_field_ids or set()
     if isinstance(value, dict):
         field_id = value.get("fieldId")
         if field_id:
             field = fields_by_id.get(field_id)
-            if field is None:
+            if field is None and field_id not in virtual_field_ids:
                 collect_violation(
                     violations,
                     "high",
@@ -166,6 +168,7 @@ def _walk_config_field_refs(
                 f"{path}.{key}",
                 violations,
                 require_option_object=require_option_object,
+                virtual_field_ids=virtual_field_ids,
             )
     elif isinstance(value, list):
         for index, child in enumerate(value):
@@ -175,7 +178,49 @@ def _walk_config_field_refs(
                 f"{path}[{index}]",
                 violations,
                 require_option_object=require_option_object,
+                virtual_field_ids=virtual_field_ids,
             )
+
+
+def _collect_virtual_field_ids(data: dict) -> set[str]:
+    """Collect explicitly declared workflow-local/process variable IDs."""
+    result = {"number_fx_id", "string_fx_id", "date_fx_id"}
+
+    def add_fields(value: object) -> None:
+        if not isinstance(value, list):
+            return
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            field_id = item.get("fieldId") or item.get("controlId")
+            if isinstance(field_id, str) and field_id:
+                result.add(field_id)
+
+    workflows = data.get("workflows")
+    workflow_items = workflows if isinstance(workflows, list) else [data]
+    for workflow in workflow_items:
+        if not isinstance(workflow, dict):
+            continue
+        trigger = workflow.get("trigger") or {}
+        trigger_config = trigger.get("config") or {}
+        if trigger.get("type") == "pbp":
+            add_fields(trigger_config.get("inputs"))
+        nodes = workflow.get("node_chain")
+        if not isinstance(nodes, list):
+            nodes = workflow.get("nodes") or []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = node.get("node_type") or node.get("nodeType")
+            config = node.get("config") or {}
+            if node_type == "code":
+                add_fields(config.get("outputs"))
+            elif node_type == "pbp_call":
+                add_fields(config.get("inputs") or config.get("fields"))
+                add_fields(config.get("outputs"))
+            elif node_type == "pbp_output":
+                add_fields(config.get("outputs") or config.get("fields"))
+    return result
 
 
 def load_schema() -> dict:
@@ -331,6 +376,7 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
 
     fields_by_id: dict[str, dict] = {}
     field_worksheet_by_id: dict[str, str] = {}
+    virtual_field_ids = _collect_virtual_field_ids(data)
     sheets = data.get("sheets")
     sheets_schema = schema.get("sheets", {})
     if not isinstance(sheets, list):
@@ -669,6 +715,7 @@ def validate_lock(data: dict, schema: dict | None = None) -> list[dict]:
                         fields_by_id,
                         f"{node_path}.config",
                         violations,
+                        virtual_field_ids=virtual_field_ids,
                     )
 
             references = workflow.get("field_references")
@@ -918,6 +965,43 @@ def validate_exec(data: dict) -> list[dict]:
         for key in ("org_id", "app_id", "worksheet_id"):
             _require_nonempty(target.get(key), f"$.target.{key}", violations)
 
+    deployment = data.get("deployment")
+    if deployment is not None:
+        if not isinstance(deployment, dict):
+            collect_violation(
+                violations,
+                "high",
+                "$.deployment",
+                "deployment 必须是对象",
+            )
+        else:
+            mode = deployment.get("mode")
+            if mode not in {"create_new", "configure_existing"}:
+                collect_violation(
+                    violations,
+                    "high",
+                    "$.deployment.mode",
+                    f"deployment.mode 值无效: {mode!r}",
+                )
+            if mode == "configure_existing":
+                _require_nonempty(
+                    deployment.get("process_id"),
+                    "$.deployment.process_id",
+                    violations,
+                )
+            if mode == "create_new" and deployment.get("process_id"):
+                collect_violation(
+                    violations,
+                    "high",
+                    "$.deployment.process_id",
+                    "create_new 不得预填 process_id",
+                )
+            _require_nonempty(
+                deployment.get("name_check"),
+                "$.deployment.name_check",
+                violations,
+            )
+
     trigger = data.get("trigger")
     _required_keys(trigger, ["type", "config"], "$.trigger", violations)
     if isinstance(trigger, dict):
@@ -1065,6 +1149,7 @@ def validate_exec(data: dict) -> list[dict]:
                         f"{path}.relation_worksheet_id",
                         violations,
                     )
+    virtual_field_ids = _collect_virtual_field_ids(data)
     if isinstance(nodes, list):
         for index, node in enumerate(nodes):
             if isinstance(node, dict):
@@ -1074,6 +1159,7 @@ def validate_exec(data: dict) -> list[dict]:
                     f"$.nodes[{index}].config",
                     violations,
                     require_option_object=False,
+                    virtual_field_ids=virtual_field_ids,
                 )
     if not isinstance(data.get("dependencies"), dict):
         collect_violation(

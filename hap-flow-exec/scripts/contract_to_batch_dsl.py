@@ -147,13 +147,13 @@ def build_batch_nodes(
             if alias in reserved_aliases:
                 continue
             node_type = node.get("nodeType") or node.get("node_type")
-            if node_type in {"delay", "code"}:
+            if node_type == "delay":
                 _error(
                     errors,
                     f"{path}.nodeType",
                     "BATCH_UNSUPPORTED_NODE_TYPE",
                     (
-                        f"{node_type} 不支持 batch-add；必须在创建骨架前"
+                        "delay 不支持 batch-add；必须在创建骨架前"
                         "拆分为受控的后置 node-add 计划"
                     ),
                 )

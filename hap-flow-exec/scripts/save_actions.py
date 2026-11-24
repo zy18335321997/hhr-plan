@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+import hap_dsl_extensions
+
 NODE_TYPE_ACTION = {
     "update_record": "2",
     "create_record": "1",
@@ -75,31 +77,15 @@ def load_contract(path: str) -> dict:
 def _normalize_fields(
     fields: list[dict],
     field_types: dict[str, int] | None = None,
+    alias_to_id: dict[str, str] | None = None,
+    source_nodes: dict[str, dict] | None = None,
 ) -> list[dict]:
-    out = []
-    for f in (fields or []):
-        field_id = f.get("fieldId") or f.get("controlId", "")
-        field_type = (
-            f.get("type")
-            if f.get("type") is not None
-            else (field_types or {}).get(field_id)
-        )
-        value = f.get("value")
-        if isinstance(value, dict) and value.get("key"):
-            value = value["key"]
-        elif isinstance(value, list):
-            value = [
-                item.get("key") if isinstance(item, dict) else item
-                for item in value
-            ]
-        if field_type == 29 and isinstance(value, list) and len(value) == 1:
-            value = value[0]
-        out.append({
-            "fieldId": field_id,
-            "type": field_type,
-            "fieldValue": value if value is not None else f.get("fieldValue", ""),
-        })
-    return out
+    return hap_dsl_extensions.build_action_fields(
+        fields,
+        alias_to_id or {},
+        source_nodes or {},
+        field_types,
+    )
 
 
 def _fields_need_source(fields: list[dict]) -> bool:
@@ -119,7 +105,10 @@ def _fields_need_source(fields: list[dict]) -> bool:
             return any(dynamic(child) for child in value)
         return False
 
-    return any(dynamic(field.get("value")) for field in fields)
+    return any(
+        dynamic(field.get("value")) or dynamic(field.get("valueRef"))
+        for field in fields
+    )
 
 
 def _build_filter_wire(filt: dict, alias_to_id: dict[str, str]) -> list[dict]:
@@ -220,6 +209,7 @@ def collect_tasks(
 ) -> list[Task]:
     """Walk the node tree and collect all save tasks."""
     tasks: list[Task] = []
+    source_nodes = hap_dsl_extensions.index_node_specs(nodes)
 
     def walk(node_list: list[dict], current_pid: str):
         current_aliases = (alias_maps or {}).get(
@@ -256,6 +246,8 @@ def collect_tasks(
                     "fields": _normalize_fields(
                         config.get("fields", []),
                         field_types,
+                        current_aliases,
+                        source_nodes,
                     ),
                 }
                 tasks.append(t)

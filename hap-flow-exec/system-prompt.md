@@ -137,8 +137,9 @@ python3 ~/.claude/skills/hap-flow-exec/scripts/contract_to_batch_dsl.py \
   --output /tmp/hap-batch-nodes-preflight.json
 ```
 
-适配预检必须在创建工作流骨架前完成。若发现 delay/code 等 batch-add 不支持的节点，
-先 Hard Stop 并形成明确的后置 node-add 计划；不得创建半个流程后才发现不兼容。
+适配预检必须在创建工作流骨架前完成。若发现 delay 等当前仍不支持持久化的节点，
+先 Hard Stop 并形成明确的后置 node-add 计划；code 节点由执行器扩展 DSL 处理，但仍须
+通过静态预检和创建后的结构回读，不得把测试接口结果当成持久化证据。
 
 **验证清单**：
 ```

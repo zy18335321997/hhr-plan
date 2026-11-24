@@ -14,6 +14,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import contract_to_batch_dsl  # noqa: E402
 import execution_state  # noqa: E402
+import hap_dsl_extensions  # noqa: E402
 import live_preflight  # noqa: E402
 import preflight  # noqa: E402
 import run_batch_add  # noqa: E402
@@ -170,6 +171,71 @@ class BatchDslTests(unittest.TestCase):
             )
         )
 
+    def test_laird_extension_nodes_are_lowered_without_loss(self):
+        contract = load_contract()
+        contract["nodes"] = [
+            {
+                "alias": "normalize_old",
+                "nodeType": "code",
+                "name": "旧数量",
+                "config": {
+                    "language": "javascript",
+                    "inputs": [
+                        {
+                            "name": "old",
+                            "value": {
+                                "kind": "field",
+                                "node": "trigger",
+                                "fieldId": "old-value",
+                            },
+                        }
+                    ],
+                    "code": "output = { result: input.old || 0 };",
+                },
+            },
+            {
+                "alias": "absolute",
+                "nodeType": "compute",
+                "name": "绝对值",
+                "config": {
+                    "mode": "function",
+                    "formula": "ABS($normalize_old-result$)",
+                    "output_type": "number",
+                },
+            },
+            {
+                "alias": "result",
+                "nodeType": "pbp_output",
+                "name": "输出参数",
+                "config": {
+                    "outputs": [
+                        {
+                            "fieldId": "result-id",
+                            "fieldName": "normalized_value",
+                            "type": 6,
+                            "valueRef": {
+                                "kind": "field",
+                                "node": "absolute",
+                                "fieldId": "number_fx_id",
+                            },
+                        }
+                    ]
+                },
+            },
+        ]
+        nodes = contract_to_batch_dsl.build_batch_nodes(
+            contract,
+            trigger_node_id="physical-trigger",
+        )
+        self.assertEqual(
+            ["code", "compute", "pbp_output"],
+            [node["nodeType"] for node in nodes],
+        )
+        self.assertEqual(
+            "physical-trigger",
+            nodes[0]["config"]["inputs"][0]["value"]["node"],
+        )
+
     def test_fill_form_field_id_is_lowered_to_complete_wire_item(self):
         contract = load_contract()
         contract["nodes"] = [
@@ -263,6 +329,104 @@ class LivePreflightTests(unittest.TestCase):
         self.assertTrue(
             any(
                 error["code"] == "CONTRACT_FIELD_REFERENCE_MISSING"
+                for error in errors
+            )
+        )
+
+    def test_pbp_controls_and_process_outputs_are_not_worksheet_fields(self):
+        contract = copy.deepcopy(load_contract())
+        contract["trigger"] = {
+            "type": "pbp",
+            "config": {
+                "inputs": [
+                    {"controlId": "pbp-input", "name": "old_value"}
+                ]
+            },
+        }
+        contract["field_references"] = []
+        contract["nodes"] = [
+            {
+                "alias": "normalize",
+                "nodeType": "code",
+                "config": {
+                    "inputs": [
+                        {
+                            "name": "old",
+                            "value": {
+                                "kind": "field",
+                                "node": "trigger",
+                                "fieldId": "pbp-input",
+                            },
+                        }
+                    ],
+                    "outputs": [{"fieldId": "result"}],
+                },
+            },
+            {
+                "alias": "return_value",
+                "nodeType": "pbp_output",
+                "config": {
+                    "outputs": [
+                        {
+                            "fieldId": "pbp-output",
+                            "valueRef": {
+                                "kind": "field",
+                                "node": "normalize",
+                                "fieldId": "result",
+                            },
+                        }
+                    ]
+                },
+            },
+        ]
+        errors = live_preflight.validate_live(
+            contract,
+            snapshot_dir=str(FIXTURES / "worksheet-info"),
+        )
+        self.assertFalse(
+            any(
+                error["code"] == "CONTRACT_FIELD_REFERENCE_MISSING"
+                for error in errors
+            )
+        )
+        self.assertFalse(
+            any(
+                error["code"] == "CONTRACT_PBP_CONTROL_NOT_FOUND"
+                for error in errors
+            )
+        )
+
+    def test_unknown_pbp_trigger_control_fails(self):
+        contract = copy.deepcopy(load_contract())
+        contract["trigger"] = {
+            "type": "pbp",
+            "config": {"inputs": []},
+        }
+        contract["nodes"] = [
+            {
+                "alias": "normalize",
+                "nodeType": "code",
+                "config": {
+                    "inputs": [
+                        {
+                            "name": "old",
+                            "value": {
+                                "kind": "field",
+                                "node": "trigger",
+                                "fieldId": "missing-pbp-input",
+                            },
+                        }
+                    ]
+                },
+            }
+        ]
+        errors = live_preflight.validate_live(
+            contract,
+            snapshot_dir=str(FIXTURES / "worksheet-info"),
+        )
+        self.assertTrue(
+            any(
+                error["code"] == "CONTRACT_PBP_CONTROL_NOT_FOUND"
                 for error in errors
             )
         )
@@ -363,6 +527,36 @@ class LivePreflightTests(unittest.TestCase):
         ]
         usages = live_preflight._collect_field_usages(nodes, references)
         self.assertIn(("ws-target", "target-status"), usages)
+
+    def test_get_relation_records_field_uses_source_scope(self):
+        references = {
+            "relation-field": {
+                "fieldId": "relation-field",
+                "worksheet": "ws-source",
+                "type": "Relation",
+                "relation_worksheet_id": "ws-target",
+            }
+        }
+        nodes = [
+            {
+                "alias": "fetch_targets",
+                "nodeType": "get_relation_records",
+                "config": {
+                    "worksheet": "ws-target",
+                    "target": {"node": "trigger"},
+                    "fields": [{"fieldId": "relation-field"}],
+                },
+            }
+        ]
+
+        usages = live_preflight._collect_field_usages(
+            nodes,
+            references,
+            trigger_worksheet="ws-source",
+        )
+
+        self.assertIn(("ws-source", "relation-field"), usages)
+        self.assertNotIn(("ws-target", "relation-field"), usages)
 
     def test_relation_reference_requires_and_checks_target(self):
         contract = copy.deepcopy(load_contract())
@@ -582,8 +776,395 @@ class SaveActionTests(unittest.TestCase):
         self.assertEqual("", tasks[0].data["source_alias"])
         self.assertEqual("", tasks[0].data["source_node_id"])
 
+    def test_dynamic_update_fields_preserve_pbp_and_rollup_sources(self):
+        nodes = [
+            {
+                "alias": "count_targets",
+                "nodeType": "rollup",
+                "name": "统计关联数量",
+                "config": {"data_source": {"node": "fetch_targets"}},
+            },
+            {
+                "alias": "call_normalize",
+                "nodeType": "pbp_call",
+                "name": "调用标准化 PBP",
+                "config": {
+                    "processId": "pbp-pid",
+                    "outputs": [
+                        {
+                            "fieldId": "pbp-output",
+                            "fieldName": "normalized_value",
+                            "type": 6,
+                        }
+                    ],
+                },
+            },
+            {
+                "alias": "update_source",
+                "nodeType": "update_record",
+                "name": "回写验收结果",
+                "config": {
+                    "worksheet": "source-ws",
+                    "target": {"node": "trigger"},
+                    "fields": [
+                        {
+                            "fieldId": "normalized-field",
+                            "valueRef": {
+                                "kind": "field",
+                                "node": "call_normalize",
+                                "fieldId": "pbp-output",
+                            },
+                        },
+                        {
+                            "fieldId": "count-field",
+                            "valueRef": {
+                                "kind": "field",
+                                "node": "count_targets",
+                                "fieldId": "number_fx_id",
+                            },
+                        },
+                    ],
+                },
+            },
+        ]
+        tasks = save_actions.collect_tasks(
+            nodes,
+            {
+                "trigger": "trigger-id",
+                "count_targets": "count-id",
+                "call_normalize": "call-id",
+                "update_source": "update-id",
+            },
+            "main-pid",
+            {},
+            field_types={"normalized-field": 6, "count-field": 6},
+        )
+        fields = tasks[0].data["fields"]
+        self.assertEqual("call-id", fields[0]["nodeId"])
+        self.assertEqual("pbp-output", fields[0]["fieldValueId"])
+        self.assertEqual(17, fields[0]["nodeAppType"])
+        self.assertEqual("pbp-pid", fields[0]["nodeAppId"])
+        self.assertEqual(20, fields[0]["nodeTypeId"])
+        self.assertEqual("500", fields[0]["nodeActionId"])
+        self.assertEqual("count-id", fields[1]["nodeId"])
+        self.assertEqual("number_fx_id", fields[1]["fieldValueId"])
+        self.assertEqual(11, fields[1]["nodeAppType"])
+        self.assertEqual(9, fields[1]["nodeTypeId"])
+        self.assertEqual("105", fields[1]["nodeActionId"])
+
+
+class ExtendedDslTests(unittest.TestCase):
+    def test_pbp_trigger_can_preserve_contract_control_id(self):
+        from hap_cli.core import workflow_node_dsl as dsl
+
+        original = dsl._pbp_control
+        with hap_dsl_extensions.installed_extensions():
+            control = dsl._pbp_control(
+                {
+                    "controlId": "input-control-id",
+                    "name": "old_value",
+                    "type": "number",
+                    "required": True,
+                }
+            )
+            self.assertEqual("input-control-id", control["controlId"])
+        self.assertIs(original, dsl._pbp_control)
+
+    def test_extended_context_normalizes_string_field_source_alias(self):
+        from hap_cli.core import workflow_node_dsl as dsl
+
+        original = dsl.translate_field_patches
+        with hap_dsl_extensions.installed_extensions():
+            fields = dsl.translate_field_patches(
+                [
+                    {
+                        "fieldId": "target-field",
+                        "valueRef": {
+                            "kind": "field",
+                            "node": "source_alias",
+                            "fieldId": "source-field",
+                        },
+                    }
+                ],
+                {"source_alias": "source-id"},
+            )
+
+        self.assertEqual("source-id", fields[0]["nodeId"])
+        self.assertEqual("source-field", fields[0]["fieldValueId"])
+        self.assertIs(original, dsl.translate_field_patches)
+
+    def test_code_bypasses_legacy_batch_normalizer_rejection(self):
+        from hap_cli.core import workflow_node_dsl as dsl
+
+        original = dsl._normalize_v3_node
+        node = {
+            "nodeAlias": "normalize",
+            "nodeType": "code",
+            "config": {"code": "output = { result: 1 };"},
+        }
+        with hap_dsl_extensions.installed_extensions():
+            self.assertEqual(node, dsl._normalize_v3_node(node))
+        self.assertIs(original, dsl._normalize_v3_node)
+
+    def test_pbp_output_reuses_platform_owned_terminal_node(self):
+        from hap_cli.core import workflow_node_dsl as dsl
+
+        structure = {
+            "flowNodeMap": {
+                "trigger-id": {"id": "trigger-id", "typeId": 0},
+                "output-id": {
+                    "id": "output-id",
+                    "typeId": 20,
+                    "actionId": "502",
+                },
+            }
+        }
+        with mock.patch(
+            "hap_cli.core.flow_node.get_nodes",
+            return_value=structure,
+        ), mock.patch("hap_cli.core.flow_node.add_node") as add_node, mock.patch(
+            "hap_cli.core.flow_node.save_node",
+            return_value={"ok": True},
+        ):
+            with hap_dsl_extensions.installed_extensions():
+                result = dsl.build_workflow_nodes(
+                    mock.Mock(),
+                    "pbp-pid",
+                    [
+                        {
+                            "nodeAlias": "return_value",
+                            "nodeType": "pbp_output",
+                            "name": "输出参数",
+                            "config": {"outputs": []},
+                        }
+                    ],
+                    trigger_node_id="trigger-id",
+                    trigger_alias="pbp_trigger",
+                )
+
+        add_node.assert_not_called()
+        self.assertEqual(
+            "output-id",
+            result["aliasToNodeId"]["return_value"],
+        )
+        self.assertEqual("output-id", result["created"][0]["nodeId"])
+
+    def test_code_wire_uses_utf8_base64_and_resolves_input_node(self):
+        source = "const 名称 = input.old;\noutput = { result: 名称 };"
+        wire = hap_dsl_extensions.build_code_wire(
+            {
+                "config": {
+                    "language": "javascript",
+                    "code": source,
+                    "inputs": [
+                        {
+                            "name": "old",
+                            "value": {
+                                "kind": "field",
+                                "node": "trigger",
+                                "fieldId": "old-value",
+                            },
+                        }
+                    ],
+                }
+            },
+            {"trigger": "trigger-id"},
+        )
+        import base64
+
+        self.assertEqual(source, base64.b64decode(wire["code"]).decode())
+        self.assertEqual("102", wire["actionId"])
+        self.assertEqual(
+            "$trigger-id-old-value$",
+            wire["inputDatas"][0]["value"],
+        )
+
+    def test_code_wire_accepts_preencoded_source_without_double_encoding(self):
+        import base64
+
+        source = "output = { result: input.old ?? 0 };"
+        encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
+        wire = hap_dsl_extensions.build_code_wire(
+            {
+                "config": {
+                    "language": "javascript",
+                    "source": source,
+                    "code": encoded,
+                    "codeEncoding": "utf8_base64",
+                }
+            },
+            {},
+        )
+        self.assertEqual(encoded, wire["code"])
+
+    def test_static_preflight_rejects_mismatched_preencoded_code(self):
+        import base64
+
+        contract = copy.deepcopy(load_contract())
+        contract["nodes"] = [
+            {
+                "alias": "code",
+                "nodeType": "code",
+                "config": {
+                    "source": "output = { result: 1 };",
+                    "code": base64.b64encode(
+                        b"output = { result: 2 };"
+                    ).decode("ascii"),
+                    "codeEncoding": "utf8_base64",
+                },
+            }
+        ]
+        passed, errors = preflight.validate_static(contract)
+        self.assertFalse(passed)
+        self.assertTrue(any("Base64 解码结果不一致" in error for error in errors))
+
+    def test_pbp_fields_keep_metadata_and_resolve_dynamic_value(self):
+        fields = hap_dsl_extensions.build_pbp_fields(
+            [
+                {
+                    "fieldId": "output-id",
+                    "fieldName": "normalized_value",
+                    "alias": "normalized_value",
+                    "desc": "",
+                    "type": 6,
+                    "valueRef": {
+                        "kind": "field",
+                        "node": "compute",
+                        "fieldId": "number_fx_id",
+                    },
+                }
+            ],
+            {"compute": "compute-id"},
+            {
+                "compute": {
+                    "nodeAlias": "compute",
+                    "nodeType": "compute",
+                    "name": "计算绝对值",
+                    "config": {
+                        "mode": "function",
+                        "output_type": "number",
+                    },
+                }
+            },
+        )
+        self.assertEqual("normalized_value", fields[0]["fieldName"])
+        self.assertEqual("compute-id", fields[0]["nodeId"])
+        self.assertEqual("string_fx_id", fields[0]["fieldValueId"])
+        self.assertEqual(11, fields[0]["nodeAppType"])
+        self.assertEqual("6", fields[0]["fieldValueType"])
+        self.assertEqual(9, fields[0]["nodeTypeId"])
+        self.assertEqual("106", fields[0]["nodeActionId"])
+        self.assertEqual(0, fields[0]["sourceType"])
+        self.assertEqual("compute-id", fields[0]["sureNodeId"])
+        self.assertEqual("计算绝对值", fields[0]["nodeName"])
+        self.assertEqual("结果", fields[0]["fieldValueName"])
+        self.assertFalse(fields[0]["isSourceApp"])
+        self.assertNotIn("addType", fields[0])
+
+    def test_non_function_compute_keeps_declared_result_id(self):
+        fields = hap_dsl_extensions.build_pbp_fields(
+            [
+                {
+                    "fieldId": "output-id",
+                    "type": 6,
+                    "valueRef": {
+                        "kind": "field",
+                        "node": "compute",
+                        "fieldId": "number_fx_id",
+                    },
+                }
+            ],
+            {"compute": "compute-id"},
+            {
+                "compute": {
+                    "nodeAlias": "compute",
+                    "nodeType": "compute",
+                    "name": "数值计算",
+                    "config": {"mode": "number", "output_type": "number"},
+                }
+            },
+        )
+        self.assertEqual("number_fx_id", fields[0]["fieldValueId"])
+
+    def test_interface_push_defaults_match_alert_wire(self):
+        wire = hap_dsl_extensions.build_push_wire(
+            {"config": {"content": "完成", "pushType": 1}},
+            {},
+        )
+        self.assertEqual(1, wire["pushType"])
+        self.assertEqual(2, wire["promptType"])
+        self.assertEqual(5, wire["duration"])
+        self.assertEqual("完成", wire["content"])
+
+    def test_static_preflight_rejects_incomplete_extension_nodes(self):
+        contract = copy.deepcopy(load_contract())
+        contract["nodes"] = [
+            {"alias": "code", "nodeType": "code", "config": {}},
+            {"alias": "call", "nodeType": "pbp_call", "config": {}},
+            {
+                "alias": "push",
+                "nodeType": "interface_push",
+                "config": {"pushType": 1},
+            },
+        ]
+        passed, errors = preflight.validate_static(contract)
+        self.assertFalse(passed)
+        self.assertTrue(any("config.code" in error for error in errors))
+        self.assertTrue(any("processId" in error for error in errors))
+        self.assertTrue(any("弹出提示内容" in error for error in errors))
+
 
 class BatchRunnerTests(unittest.TestCase):
+    def test_extended_nodes_route_through_in_process_builder(self):
+        nodes = [
+            {
+                "nodeAlias": "normalize",
+                "nodeType": "code",
+                "name": "标准化",
+                "config": {"code": "output = { result: 1 };"},
+            }
+        ]
+        trigger_pbp = {
+            "inputs": [
+                {"name": "old_value", "type": "number", "required": True}
+            ]
+        }
+        built = {
+            "aliasToNodeId": {
+                "pbp_trigger": "trigger-id",
+                "normalize": "code-id",
+            },
+            "created": [
+                {
+                    "alias": "normalize",
+                    "nodeId": "code-id",
+                    "nodeType": "code",
+                }
+            ],
+        }
+        with mock.patch.object(
+            run_batch_add.hap_dsl_extensions,
+            "run_extended_batch_add",
+            return_value=built,
+        ) as extended, mock.patch.object(run_batch_add.subprocess, "run") as run:
+            result, exit_code = run_batch_add.run_batch_add(
+                "pid-pbp",
+                nodes,
+                trigger_alias="pbp_trigger",
+                trigger_pbp=trigger_pbp,
+            )
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("pass", result["verdict"])
+        self.assertEqual("pid-pbp", result["pid"])
+        extended.assert_called_once_with(
+            "pid-pbp",
+            nodes,
+            trigger_alias="pbp_trigger",
+            trigger_pbp=trigger_pbp,
+        )
+        run.assert_not_called()
+
     def test_successful_batch_output_is_bound_to_pid(self):
         completed = mock.Mock(
             returncode=0,

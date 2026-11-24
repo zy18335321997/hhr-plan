@@ -335,6 +335,7 @@
 □ rollup/compute 输出字段是固定常量:
   - rollup → number_fx_id
   - compute(number/dateDiff) → number_fx_id
+  - compute(function/action 106) → string_fx_id（即使结果类型为数值）
   - compute(dateOffset) → date_fx_id
   - code → 自定义输出参数名
 □ dateOffset 表达式严格格式:

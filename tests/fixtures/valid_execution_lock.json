@@ -175,6 +175,11 @@
   "workflows": [
     {
       "name": "提交采购需求",
+      "deployment": {
+        "mode": "create_new",
+        "process_id": null,
+        "name_check": "平台精确名称查重未发现同名工作流"
+      },
       "worksheet_id": "ws-purchase",
       "trigger_sheet": "采购需求",
       "trigger_type": "button",
@@ -261,15 +266,15 @@
     "agent_2_platform": {"result": "pass"}
   },
   "verification": {
-    "input_digest": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880",
+    "input_digest": "8179f26fdbdbf106ccb10b672d233b840ce8bb71d680a0940e54b6f58a1053bc",
     "verification_agents": {
       "schema_version": "1.1",
       "completeness": "pass",
       "semantic_verdict": "pass",
       "agents": ["agent_1_logic", "agent_2_platform"],
       "agent_input_digests": {
-        "agent_1_logic": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880",
-        "agent_2_platform": "5fdbe24ecf1bad408107b4d17e4a7a512e04bce5d6ec65de53fad1c0ca2bd880"
+        "agent_1_logic": "8179f26fdbdbf106ccb10b672d233b840ce8bb71d680a0940e54b6f58a1053bc",
+        "agent_2_platform": "8179f26fdbdbf106ccb10b672d233b840ce8bb71d680a0940e54b6f58a1053bc"
       }
     },
     "fix_plan": {

@@ -1,8 +1,8 @@
 # 验证通过的节点 DSL 格式
 
 > 来源：2026-07-05 至 2026-07-22 的本地回归与沙箱实机验证。
-> 16 种节点类型已通过可发布、可执行验证；delay / code 仅验证了部分底层能力，
-> 当前执行器仍不能把它们持久化为可发布节点。
+> code、PBP 调用/输出和界面推送已通过执行器扩展与沙箱实机结构回读；delay
+> 仍只有结构级证据，不能算作可发布、可执行能力。
 
 ## 获取/查询节点
 
@@ -73,6 +73,25 @@
   }
 }
 ```
+
+### get_relation_records（获取多条关联记录）
+
+```json
+{
+  "nodeAlias": "fetch_targets",
+  "nodeType": "get_relation_records",
+  "name": "获取关联目标",
+  "config": {
+    "worksheet": "<关联目标表ID>",
+    "target": {"node": "<源记录alias>"},
+    "fields": [{"fieldId": "<源表关联字段ID>"}]
+  }
+}
+```
+
+> action `401` 返回可被 rollup/action `105` 消费的多条记录集。type `6` / action
+> `20` 的 get_relation 结果不能作为 action `105` 的对象来源；平台会把统计节点标记为
+> 异常并在 UI 显示对象已删除。
 
 ## 数据操作节点
 
@@ -282,8 +301,8 @@
 
 ## node add 专属（不支持 batch-add）
 
-> 以下两种节点类型不支持 batch-add。`node add` 或测试接口只能验证部分能力，
-> 当前都不能由执行器创建为可发布、可执行节点。
+> delay 不支持 batch-add，`node add` 只能验证部分能力；code 由执行器扩展 DSL
+> 补齐批量建节点和保存 wire，不应再走旧的公共 DSL 路径。
 
 ### delay（延时等待）
 
@@ -312,9 +331,9 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 - `language`: "javascript" (默认) 或 "python"
 
 > ⚠️ `test-code` 执行 `return { result: 2 };` 成功并返回 `result=2`，证明代码引擎可用。
-> ⚠️ 节点保存连续两次返回 500（包括补充 `actionId/version` 的尝试），不能持久化为
-> 可发布节点。因此当前只算引擎测试通过，不算节点执行能力通过。
-> ⚠️ batch-add 仍由 `_normalize_v3_node` 显式拒绝。
+> 当前执行器通过 `hap_dsl_extensions.py` 在进程内补齐 code 的批量建节点和保存 wire；
+> 沙箱实机已回读源码、输入绑定、`maxRetries` 且节点 `isException=false`，并完成发布。
+> 代码能力以此扩展路径为准，不能再沿用旧的“save 500”缺口结论。
 
 ## 统计与通知
 
@@ -472,6 +491,7 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | nodeType | typeId | 创建方式 |
 |----------|--------|---------|
 | get_relation | 6 | batch-add |
+| get_relation_records | 13 | batch-add |
 | get_single | 7 | batch-add |
 | get_multiple | 13 | batch-add |
 | update_record | 6 | batch-add |
@@ -488,7 +508,7 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | cc | 5 | batch-add |
 | send_email | 11 | batch-add |
 | delay | 12 | node add 仅建结构；配置不能持久化，当前不可发布 |
-| code | 14 | test-code 可运行；节点保存 500，当前不可发布 |
+| code | 14 | 执行器扩展 DSL；Base64 源码/输入绑定可持久化并发布 |
 
 ## 已知限制
 
@@ -498,4 +518,4 @@ hap workflow node add PID --type 14 --name "代码块" --after UPSTREAM_NODE_ID
 | schedule + get_multiple + filter | 此组合间歇 500 |
 | notice 收件人 kind=role | CLI 不支持 role 解析，用 kind=field 或 UI 手动 |
 | delay 节点配置 | node add 成功，但时长保存后归零且节点异常；当前只能建结构 |
-| code 节点配置 | test-code 可运行，但节点 save 连续 500；当前不能持久化 |
+| code 节点配置 | 已由执行器扩展路径覆盖；必须回读源码、输入绑定、重试次数与 isException |

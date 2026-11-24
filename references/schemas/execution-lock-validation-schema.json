@@ -126,7 +126,7 @@
       "dependencies",
       "publish_order"
     ],
-    "valid_trigger_types": ["button", "event", "schedule", "subprocess"],
+    "valid_trigger_types": ["button", "event", "schedule", "subprocess", "pbp"],
     "valid_complexity": ["Simple", "Standard", "Complex", "VComplex"],
     "valid_data_signature": [
       "Mutator",

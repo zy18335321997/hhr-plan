@@ -18,6 +18,7 @@ from contract_compat import validate_exec, validate_lock
 WORKSHEET_NODE_TYPES = {
     "get_single",
     "get_multiple",
+    "get_relation_records",
     "update_record",
     "create_record",
     "delete_record",
@@ -504,6 +505,7 @@ def convert_lock(
             "app_id": target.get("app_id"),
             "worksheet_id": worksheet_id,
         },
+        "deployment": copy.deepcopy(workflow.get("deployment", {})),
         "trigger": copy.deepcopy(trigger),
         "nodes": converted_nodes,
         "field_references": converted_references,

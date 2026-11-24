@@ -89,13 +89,19 @@ def _collect_field_ids(value: object) -> set[str]:
 def _collect_field_usages(
     nodes: list[dict],
     references_by_id: dict[str, dict],
+    trigger_worksheet: str | None = None,
+    pbp_control_ids: set[str] | None = None,
+    scope_errors: list[dict] | None = None,
 ) -> list[tuple[str | None, str]]:
     alias_to_worksheet = {}
+    producer_aliases = set()
 
     def index_aliases(value: object):
         if isinstance(value, dict):
             alias = value.get("alias") or value.get("nodeAlias")
             config = value.get("config")
+            if alias:
+                producer_aliases.add(alias)
             if alias and isinstance(config, dict):
                 worksheet = config.get("worksheet")
                 if value.get("nodeType") == "get_relation":
@@ -137,11 +143,44 @@ def _collect_field_usages(
                 and field_id not in SYSTEM_FIELD_IDS
             ):
                 source_alias = value.get("node")
-                field_worksheet = (
-                    alias_to_worksheet.get(source_alias)
-                    or local_worksheet
-                )
-                usages.append((field_worksheet, field_id))
+                if source_alias == "trigger" and pbp_control_ids is not None:
+                    if (
+                        field_id not in pbp_control_ids
+                        and scope_errors is not None
+                    ):
+                        scope_errors.append(
+                            {
+                                "code": "CONTRACT_PBP_CONTROL_NOT_FOUND",
+                                "field_id": field_id,
+                                "detail": (
+                                    "PBP 节点引用的触发参数未在 "
+                                    "trigger.config.inputs 中登记"
+                                ),
+                            }
+                        )
+                    field_worksheet = None
+                elif source_alias == "trigger":
+                    field_worksheet = trigger_worksheet or local_worksheet
+                elif source_alias in alias_to_worksheet:
+                    field_worksheet = alias_to_worksheet[source_alias]
+                elif source_alias in producer_aliases:
+                    # Code/compute/rollup/PBP outputs are process-local controls,
+                    # not worksheet fields.
+                    field_worksheet = None
+                else:
+                    field_worksheet = local_worksheet
+                reference_worksheet = references_by_id.get(
+                    field_id,
+                    {},
+                ).get("worksheet")
+                if reference_worksheet and source_alias is None:
+                    # A get_relation_records node binds the child worksheet
+                    # as appId, while config.fields names the relation control
+                    # on its source worksheet. The explicit field reference
+                    # is authoritative for unqualified field IDs.
+                    field_worksheet = reference_worksheet
+                if field_worksheet:
+                    usages.append((field_worksheet, field_id))
             for child in value.values():
                 walk(child, local_worksheet)
         elif isinstance(value, list):
@@ -254,9 +293,23 @@ def validate_live(
         for reference in references
         if isinstance(reference, dict) and reference.get("fieldId")
     }
+    trigger = contract.get("trigger") or {}
+    trigger_config = trigger.get("config") or {}
+    trigger_is_pbp = trigger.get("type") == "pbp"
+    pbp_control_ids = None
+    if trigger_is_pbp:
+        pbp_control_ids = {
+            item.get("controlId") or item.get("fieldId")
+            for item in trigger_config.get("inputs", [])
+            if isinstance(item, dict)
+            and (item.get("controlId") or item.get("fieldId"))
+        }
     field_usages = _collect_field_usages(
         contract.get("nodes", []),
         references_by_id,
+        trigger_worksheet=contract.get("target", {}).get("worksheet_id"),
+        pbp_control_ids=pbp_control_ids,
+        scope_errors=errors,
     )
     used_field_ids = {field_id for _, field_id in field_usages}
     for field_id in sorted(used_field_ids - set(references_by_id)):

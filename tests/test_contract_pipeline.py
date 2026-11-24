@@ -308,6 +308,31 @@ class ContractPipelineTests(unittest.TestCase):
         self.assertIn("$.target.org_id", paths)
         self.assertIn("$.workflows[0].node_chain[0].config", paths)
 
+    def test_get_relation_records_requires_target_worksheet_id(self):
+        invalid = copy.deepcopy(self.lock)
+        node = invalid["workflows"][0]["node_chain"][0]
+        node.update(
+            {
+                "node_type": "get_relation_records",
+                "type_id": 13,
+                "action_id": 401,
+                "config": {
+                    "target": {"node": "trigger"},
+                    "fields": [{"fieldId": "field-status"}],
+                },
+            }
+        )
+        refresh_verification_digest(invalid)
+
+        with self.assertRaises(ConversionError) as raised:
+            convert_lock(invalid)
+
+        paths = {error["path"] for error in raised.exception.errors}
+        self.assertIn(
+            "$.workflows[0].node_chain[0].config.worksheet",
+            paths,
+        )
+
     def test_missing_field_id_inside_node_config_fails(self):
         invalid = copy.deepcopy(self.lock)
         del invalid["workflows"][0]["node_chain"][0]["config"]["fields"][0][
@@ -463,6 +488,84 @@ class ContractPipelineTests(unittest.TestCase):
         }
         self.assertIn("$.nodes[0].action_id", paths)
 
+    def test_pbp_trigger_is_a_valid_lock_and_contract_type(self):
+        lock = copy.deepcopy(self.lock)
+        workflow = lock["workflows"][0]
+        input_id = "pbp-input-id"
+        output_id = "pbp-output-id"
+        workflow["trigger_type"] = "pbp"
+        workflow["trigger"]["type"] = "pbp"
+        workflow["trigger"]["config"]["inputs"] = [
+            {
+                "controlId": input_id,
+                "name": "old_value",
+                "type": "number",
+                "required": True,
+                "alias": "old_value",
+            }
+        ]
+        workflow["node_chain"] = [
+            {
+                "index": "T1",
+                "alias": "normalize",
+                "node_type": "code",
+                "type_id": 14,
+                "action_id": 102,
+                "name": "标准化",
+                "description": "标准化 PBP 输入",
+                "config": {
+                    "code": "output = { result: input.old_value };",
+                    "inputs": [
+                        {
+                            "name": "old_value",
+                            "value": {
+                                "kind": "field",
+                                "node": "trigger",
+                                "fieldId": input_id,
+                            },
+                        }
+                    ],
+                    "outputs": [
+                        {"fieldId": "result", "fieldName": "result", "type": 6}
+                    ],
+                },
+            },
+            {
+                "index": "T2",
+                "alias": "return_result",
+                "node_type": "pbp_output",
+                "type_id": 20,
+                "action_id": 502,
+                "name": "输出参数",
+                "description": "返回标准化结果",
+                "config": {
+                    "outputs": [
+                        {
+                            "fieldId": output_id,
+                            "fieldName": "normalized_value",
+                            "type": 6,
+                            "valueRef": {
+                                "kind": "field",
+                                "node": "normalize",
+                                "fieldId": "result",
+                            },
+                        }
+                    ]
+                },
+            },
+        ]
+        workflow["node_count"] = len(workflow["node_chain"])
+        workflow["field_references"] = []
+        refresh_verification_digest(lock)
+
+        self.assertEqual([], contract_compat.validate_lock(lock))
+        contract = convert_lock(lock)
+        self.assertEqual("pbp", contract["trigger"]["type"])
+        self.assertEqual(
+            "old_value",
+            contract["trigger"]["config"]["inputs"][0]["name"],
+        )
+
     def test_lock_manager_init_requires_source_design(self):
         result = run_script(
             "lock_manager.py",
@@ -617,6 +720,52 @@ class ContractPipelineTests(unittest.TestCase):
             context=self.context,
         )
         self.assertEqual("pass", result["verdict"])
+
+    def test_design_validator_keeps_unknown_relation_read_strict(self):
+        lock = {
+            "sheets": [
+                {"name": "SOURCE", "worksheet_id": "source-ws"},
+                {"name": "TARGET", "worksheet_id": "target-ws"},
+            ],
+            "workflows": [
+                {
+                    "trigger_sheet": "SOURCE",
+                    "field_references": [],
+                    "node_chain": [
+                        {
+                            "node_type": "get_relation_records",
+                            "type_id": 13,
+                            "action_id": 401,
+                            "target_sheet": "TARGET",
+                            "reads_fields": ["不存在字段"],
+                            "writes_fields": [],
+                            "config": {
+                                "worksheet": "target-ws",
+                                "fields": [{"fieldId": "missing-field"}],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        context = {
+            "worksheets": {
+                "SOURCE": {"fields": [{"name": "关联目标"}]},
+                "TARGET": {"fields": [{"name": "名称"}]},
+            }
+        }
+
+        checks = design_validator._extract_refs_from_lock(lock)
+        result = design_validator.check_field_existence(
+            "fixture",
+            checks,
+            context=context,
+        )
+
+        self.assertEqual("fail", result["verdict"])
+        self.assertTrue(
+            any(issue.get("field") == "不存在字段" for issue in result["issues"])
+        )
 
     def test_lock_schema_file_was_explicitly_renamed(self):
         new_schema = (

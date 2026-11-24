@@ -370,6 +370,74 @@ class AgentPrepareTests(unittest.TestCase):
         )
         self.assertNotIn("gates", brief)
 
+    def test_prepare_keeps_node_config_and_field_defaults_for_semantic_review(self):
+        lock = {
+            "meta": {"project": "测试"},
+            "sheets": [
+                {
+                    "name": "测试表",
+                    "fields": [
+                        {
+                            "name": "状态",
+                            "field_id": "status-id",
+                            "type": "SingleSelect",
+                            "required": False,
+                            "unique": False,
+                            "options": [
+                                {"key": "pending", "label": "待处理", "color": "#C9E6FC"}
+                            ],
+                            "default_value": {"key": "pending", "label": "待处理"},
+                        }
+                    ],
+                }
+            ],
+            "workflows": [
+                {
+                    "name": "测试流程",
+                    "trigger_type": "event",
+                    "trigger": {"type": "event", "config": {"event": "create"}},
+                    "node_chain": [
+                        {
+                            "alias": "query",
+                            "name": "查询",
+                            "node_type": "get_single",
+                            "type_id": 7,
+                            "action_id": 400,
+                            "config": {"ifEmpty": "continue", "worksheet": "ws-id"},
+                        }
+                    ],
+                }
+            ],
+            "associations": [],
+            "gates": {},
+        }
+        digest = PREPARE.compute_lock_digest(lock)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_path = Path(temp_dir) / "lock.json"
+            validator_path = Path(temp_dir) / "validator.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+            validator_path.write_text(
+                json.dumps(
+                    {
+                        "overall_verdict": "pass",
+                        "input_digest": digest,
+                        "results": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            brief = PREPARE.prepare_brief(str(lock_path), str(validator_path))
+
+        self.assertEqual("status-id", brief["sheets"][0]["fields"][0]["field_id"])
+        self.assertEqual(
+            {"key": "pending", "label": "待处理"},
+            brief["sheets"][0]["fields"][0]["default_value"],
+        )
+        node = brief["workflows"][0]["node_chain"][0]
+        self.assertEqual("continue", node["empty_strategy"])
+        self.assertEqual("ws-id", node["config"]["worksheet"])
+        self.assertEqual("create", brief["workflows"][0]["trigger"]["config"]["event"])
+
     def test_prepare_rejects_stale_validator_evidence(self):
         lock = {"meta": {"project": "测试"}, "gates": {}}
         with tempfile.TemporaryDirectory() as temp_dir:

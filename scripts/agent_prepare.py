@@ -193,7 +193,7 @@ def prepare_brief(
         },
         "naming": lock.get("naming", {}),
         "design_ir": copy.deepcopy(lock.get("design_ir", {})),
-        # Sheets — only names, is_hub, and field names (agents don't need full config)
+        # Sheets — keep the field contract needed for default/option semantics.
         "sheets": [],
         # Associations — full (needed for cycle detection)
         "associations": lock.get("associations", []),
@@ -209,10 +209,12 @@ def prepare_brief(
             "fields": [
                 {
                     "name": f.get("name", ""),
+                    "field_id": f.get("field_id", ""),
                     "type": f.get("type", ""),
                     "required": f.get("required", False),
                     "unique": f.get("unique", False),
                     "options": f.get("options", []),
+                    "default_value": copy.deepcopy(f.get("default_value")),
                 }
                 for f in s.get("fields", [])
                 if isinstance(f, dict)
@@ -222,6 +224,7 @@ def prepare_brief(
     for wf in lock.get("workflows", []):
         node_chain_slim = []
         for n in wf.get("node_chain", []):
+            config = copy.deepcopy(n.get("config", {}))
             node_chain_slim.append({
                 "index": n.get("index", ""),
                 "alias": n.get("alias", ""),
@@ -233,21 +236,33 @@ def prepare_brief(
                 "target_sheet": n.get("target_sheet"),
                 "writes_fields": n.get("writes_fields", []),
                 "reads_fields": n.get("reads_fields", []),
-                "empty_strategy": n.get("empty_strategy"),
-                "fetch_mode": n.get("fetch_mode"),
+                "description": n.get("description", ""),
+                "axiom_ref": n.get("axiom_ref", ""),
+                "empty_strategy": n.get(
+                    "empty_strategy", config.get("ifEmpty")
+                ),
+                "fetch_mode": n.get(
+                    "fetch_mode",
+                    config.get("fetch_mode", config.get("calc_mode")),
+                ),
                 "batch_limit": n.get("batch_limit"),
                 "timeline": n.get("timeline", n.get("time")),
                 "approval_mode": (n.get("approval_config") or {}).get("mode"),
                 "subprocess_exec": (n.get("subprocess_config") or {}).get("execution_mode"),
                 "subprocess_abort": (n.get("subprocess_config") or {}).get("abort_strategy"),
+                "config": config,
             })
 
         brief["workflows"].append({
             "name": wf.get("name", ""),
+            "deployment": copy.deepcopy(wf.get("deployment", {})),
             "trigger_sheet": wf.get("trigger_sheet", ""),
             "trigger_type": wf.get("trigger_type", ""),
+            "trigger": copy.deepcopy(wf.get("trigger", {})),
             "node_count": len(node_chain_slim),
             "axiom_ref": wf.get("axiom_ref", ""),
+            "dependencies": copy.deepcopy(wf.get("dependencies", {})),
+            "publish_order": copy.deepcopy(wf.get("publish_order", [])),
             "node_chain": node_chain_slim,
         })
 
