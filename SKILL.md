@@ -1,18 +1,29 @@
 ---
 name: hhr-plan
-description: 明道云 APaaS 设计引擎。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用。
+description: 明道云 APaaS 设计引擎与统一入口。当用户需要解释工作流、分析实体生命周期、查依赖关系、设计新功能、排查问题、审计配置、说明业务流程、改工作流、工作表设计或数据模型设计时使用；也负责把搭建/修改 HAP 应用、日常数据运营与审批、Compute 应用（网站/PostgreSQL/业务函数/登录页）等意图交接给对应能力。
 user_invocable: true
-version: 2.1.0
+version: 2.2.0
 lifecycle: validated
 references:
   - system-prompt.md
 ---
 
-# hhr-plan 2.1.0
+# hhr-plan 2.2.0
 
-明道云 APaaS 设计、诊断与审计入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
+明道云 APaaS 设计、诊断与审计入口，也是 HAP 应用助手与 HAP Compute 的统一交接入口。这里只定义分流、加载顺序、完成条件和交接边界；公理、定理、详细门控和工具命令分别由各自真源维护。
 
-## 1. 先分流：轻量查询或全量任务
+## 1. 先分流：能力域，或轻量查询 / 全量任务
+
+### 能力域路由（先于 Mode 选择）
+
+意图属于以下能力域时，直接交接给对应 Skill，由该技能自身的真源与门控继续，不进入 Mode A–D：
+
+| 意图 | 交接目标 | 协议 |
+|---|---|---|
+| 搭建/继续搭建/修改重构/数据迁移 HAP 应用；线上配置查看与故障修复；日常数据查询统计、记录增删改、审批待办、触发业务流程 | Skill `hap-mcp-app-builder`（HAP 应用助手，MCP `hap_personal_mcp` 为工具底座） | `references/capability-routing.md` |
+| 创建/修改/部署 Compute 网站、PostgreSQL 数据应用、业务函数、应用登录页；Compute 安装/接入/更新、登录组织、状态用量 | Skill `hap-compute-app`（CLI `hap-compute`） | `references/capability-routing.md` |
+
+设计规格、根因诊断、健康审计仍走 Mode A–D。交接边界（诊断 vs 线上排查、设计确认后的执行去向、不可用降级）见 `references/capability-routing.md`。
 
 ### 轻量查询
 
@@ -45,6 +56,7 @@ references:
 - 诊断确认需要修改时，从 Mode C 显式切换到 Mode B，不在诊断流程内直接写设计。
 - Mode D 发现问题后先交付审计；需要修复时显式切换到 Mode B。
 - 意图或项目身份不清会改变结果时，只问一个最小澄清问题，不静默猜 Mode。
+- 能力域与 Mode 的边界（本地结构级诊断 vs 线上数据级排查、设计确认后的执行去向）见 `references/capability-routing.md`，不在本表重复。
 
 ## 3. 按需加载
 
@@ -77,6 +89,7 @@ references:
 | 八条定理与执行协议 | `references/theorems-and-protocols.md` |
 | 三层详细门控 | `references/unified-design-spec.md` |
 | 工具选择、命令和本地优先级 | `references/tool-dispatch.md` |
+| 能力域交接协议与边界 | `references/capability-routing.md` |
 | Mode 步骤与阻断规则 | 对应 `built-in-skills/mode-*.md` |
 | Agent 输出格式与合并 | Schema + `agents/verification-orchestrator.md` |
 | 客户需求到系统设计语言 | `execution_lock.json.design_ir` |
@@ -147,5 +160,6 @@ Mode A/B 的固定交接顺序：
 - 项目提取必须显式提供 `--mcp-url` 或设置 `HAP_MCP_URL`；仓库不提供默认 MCP URL。
 - 日志、快照、checkpoint、registry 和设计文档不得记录凭证化 URL。
 - `platform.json` 仅记录平台 origin 与 app_id，不含 Cookie、Token 或 HAP 凭证。
+- 能力交接时不得在对话、日志或文件中回显 PAT、Cookie 或登录回调信息；HAP Compute 的登录与组织核对由用户本人完成，交接规则见 `references/capability-routing.md`。
 - Mode B 的影响面超过规范阈值、项目路径不明确、节点数据与 PID 不匹配、Agent 失败、合约转换失败时均停止。
 - 详细门控内容只引用 `references/unified-design-spec.md`，本入口不复制门控清单。

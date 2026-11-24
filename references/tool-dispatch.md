@@ -133,6 +133,32 @@ URL 形态: `http://<host>/app/<app_id>/workflow` 或
 | 创建/删除/启停 | `python3 $HAP wf-create / wf-delete / wf-status` |
 | 保存配置 | `python3 $HAP wf-save '<pid>' '<config>' --chrome` |
 
+## HAP 应用助手 MCP（hap_personal_mcp，api.mingdao.com 官方云）
+
+目标应用在明道云官方平台（api.mingdao.com）时使用；work.jijiansmart.com / fusion.ypsti.com 仍走上方 hap-bridge。工具名形如 `mcp__hap_personal_mcp__*`（会话重启后加载），运行时 MCP Schema 为唯一能力真值源，下表只列常用入口：
+
+| 需要 | 工具 |
+|------|------|
+| 应用/组织信息 | `get_app_info` / `get_org_list` |
+| 字段结构 | `get_worksheet_structure` |
+| 记录查询/增删改 | `get_record_list` / `create_record` / `update_record` / `delete_record` |
+| 审批/日志/触发 | `get_approval_list_by_row` / `get_record_logs` / `trigger_workflow` |
+
+- 应用内读写必须显式传 `appId`；完整调用纪律与 Plan/Build/Modify/Data 流程以 Skill `hap-mcp-app-builder` 为准，本入口只交接不代做前置检查。
+- 未加载（本会话未重启）→ 提示重启客户端或 `/mcp` 重连；鉴权失败按 hap-mcp-app-builder 的 MCP_SETUP.md 处理。
+
+## HAP Compute CLI（~/.local/bin/hap-compute）
+
+Compute 应用（网站 / PostgreSQL / 业务函数 / 登录页）与 Compute 环境管理；prod 服务 https://compute.mingdao.com，说明包 `~/.local/share/hap-compute/environments/prod/guide`。
+
+| 需要 | 命令 |
+|------|------|
+| 版本/环境状态 | `hap-compute version` / `hap-compute client status --json` |
+| 登录/组织核对 | `hap-compute login --server <URL> --org <ID>`（用户本人浏览器授权）/ `hap-compute connection --expect-server <URL> --expect-org <ID> --json` |
+| 更新状态 | `hap-compute updates status --json`（CLI+Skills 自动更新已启用） |
+
+业务命令（init/release/auth/status 等）只由 Skill `hap-compute-app` 按其协议执行，本入口不直接下发业务写操作；未登录时单独报告，不冒充已核对组织。
+
 ## 禁止
 
 ```
